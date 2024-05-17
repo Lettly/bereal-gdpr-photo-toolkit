@@ -418,6 +418,10 @@ for entry in data:
         primary_filename = Path(entry["primary"]["path"]).name
         secondary_filename = Path(entry["secondary"]["path"]).name
 
+        if "btsMedia" in entry:
+            bts_filename = Path(entry["btsMedia"]["path"]).name
+            bts_path = photo_folder / bts_filename
+
         primary_path = photo_folder / primary_filename
         secondary_path = photo_folder / secondary_filename
 
@@ -451,6 +455,9 @@ for entry in data:
                 path
             ).stem  # Extract original filename without extension
 
+            original_filename_with_extension = Path(path).name
+            original_file_extension = Path(path).suffix
+
             if convert_to_jpeg == "yes":
                 if keep_original_filename == "yes":
                     new_filename = f"{time_str}_{role}_{converted_path.name}"
@@ -459,10 +466,10 @@ for entry in data:
             else:
                 if keep_original_filename == "yes":
                     new_filename = (
-                        f"{time_str}_{role}_{original_filename_without_extension}.webp"
+                        f"{time_str}_{role}_{original_filename_with_extension}"
                     )
                 else:
-                    new_filename = f"{time_str}_{role}.webp"
+                    new_filename = f"{time_str}_{role}{original_file_extension}"
 
             new_path = output_folder / new_filename
             new_path = get_unique_filename(new_path)  # Ensure the filename is unique
@@ -494,6 +501,29 @@ for entry in data:
             logging.info(f"Sucessfully processed {role} image.")
             processed_files_count += 1
             print("")
+
+        # Handle BTS Media (MP4)
+        if "btsMedia" in entry:
+            # Adjust filename based on user's choice
+            time_str = taken_at.strftime("%Y-%m-%dT%H-%M-%S")
+            original_filename_with_extension = Path(bts_path).name
+            original_file_extension = Path(bts_path).suffix
+
+            if keep_original_filename == "yes":
+                new_filename = f"{time_str}_bts_{original_filename_with_extension}"
+            else:
+                new_filename = f"{time_str}_bts{original_file_extension}"
+
+            new_path = output_folder / new_filename
+            new_path = get_unique_filename(new_path)
+
+            update_exif(new_path, taken_at, location, caption)
+            logging.info(f"Metadata added to BTS Media.")
+
+            shutil.copy2(bts_path, new_path)  # Copy to new path
+            processed_files_count += 1
+            logging.info(f"Sucessfully processed BTS Media.")
+
     except Exception as e:
         logging.error(f"Error processing entry {entry}: {e}")
 
@@ -553,7 +583,8 @@ print(
     + STYLING["RESET"]
 )
 remove_backup_files(output_folder)
-remove_backup_files(output_folder_combined)
+if "yes" in create_combined_images:
+    remove_backup_files(output_folder_combined)
 print("")
 
 # Summary
