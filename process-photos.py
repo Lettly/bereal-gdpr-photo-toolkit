@@ -8,6 +8,9 @@ import os
 import time
 import shutil
 from iptcinfo3 import IPTCInfo
+import imageio_ffmpeg as imageio
+import subprocess
+import logging
 
 # ANSI escape codes for text styling
 STYLING = {
@@ -286,6 +289,47 @@ def update_exif(image_path, datetime_original, location=None, caption=None):
         logging.error(f"Failed to update EXIF data for {image_path}: {e}")
 
 
+def update_mp4_metadata(video_path, datetime_original, location=None, caption=None):
+    try:
+        # Construct the command to update the metadata
+        command = [
+            "ffmpeg",
+            "-i",
+            video_path,
+            "-c",
+            "copy",
+            "-metadata",
+            f"creation_time={datetime_original.strftime('%Y-%m-%dT%H:%M:%S')}",
+        ]
+
+        if location and "latitude" in location and "longitude" in location:
+            command.extend(
+                [
+                    "-metadata",
+                    f"location={location['latitude']},{location['longitude']}",
+                ]
+            )
+
+        if caption:
+            command.extend(["-metadata", f"title={caption}"])
+
+        # Construct the new file name
+        new_file_name = video_path.stem + "_metadata.mp4"
+        new_path = video_path.parent / new_file_name
+
+        command.append(new_path)
+
+        # Run the command to update the metadata
+        subprocess.run(command, check=True)
+        logging.info(f"Updated metadata for {video_path}.")
+
+        # Replace the original file with the new file
+        os.replace(new_path, video_path)
+        logging.info(f"Replaced original file with updated metadata.")
+    except Exception as e:
+        logging.error(f"Failed to update metadata for {video_path}: {e}")
+
+
 # Function to update IPTC information
 def update_iptc(image_path, caption):
     try:
@@ -517,10 +561,11 @@ for entry in data:
             new_path = output_folder / new_filename
             new_path = get_unique_filename(new_path)
 
-            update_exif(new_path, taken_at, location, caption)
+            shutil.copy2(bts_path, new_path)  # Copy to new path
+
+            update_mp4_metadata(new_path, taken_at, location, caption)
             logging.info(f"Metadata added to BTS Media.")
 
-            shutil.copy2(bts_path, new_path)  # Copy to new path
             processed_files_count += 1
             logging.info(f"Sucessfully processed BTS Media.")
 
