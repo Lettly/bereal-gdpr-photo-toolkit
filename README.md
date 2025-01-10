@@ -21,7 +21,7 @@ To run this script, you'll need Python installed on your system along with the f
 You can install these libraries using pip:
 
 ```console
-pip install Pillow piexif iptcinfo3 ffmpeg-python
+pip install Pillow piexif iptcinfo3 ffmpeg-python imageio-ffmpeg
 brew install ffmpeg
 ```
 
@@ -73,6 +73,8 @@ originating program = "github/bereal-gdpr-photo-toolkit"
 
 When opening the image, this static information can look like this:
 ![](images/screenshot_iptc.png)
+
+**It only works with JPEG images and mp4 video (only the creation date).**
 
 ## Advanced settings
 
