@@ -74,7 +74,7 @@ originating program = "github/bereal-gdpr-photo-toolkit"
 When opening the image, this static information can look like this:
 ![](images/screenshot_iptc.png)
 
-**It only works with JPEG images and mp4 video (only the creation date).**
+**It only works with JPEG images and mp4 videos (on videos only the creation date is added).**
 
 ## Advanced settings
 
