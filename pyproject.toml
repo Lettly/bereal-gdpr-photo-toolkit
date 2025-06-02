@@ -1,0 +1,36 @@
+[tool.poetry]
+package-mode = false
+
+[project]
+name = "bereal-gdpr-photo-toolkit"
+version = "1.0.0"
+description = ""
+authors = [{ name = "Marco Giuseppini" }]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = ["pillow (>=11.2.1,<12.0.0)", "piexif (>=1.1.3,<2.0.0)", "iptcinfo3 (>=2.1.4,<3.0.0)", "ffmpeg-python (>=0.2.0,<0.3.0)", "imageio-ffmpeg (>=0.6.0,<0.7.0)"]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [
+    ".idea",
+    ".DS_Store",
+    ".githooks",
+    ".vscode",
+    "venv",
+    ".html",
+    ".json",
+    ".pyc",
+    ".sql",
+    "node_modules",
+]
+lint.extend-select = ["I"] # also sort imports
+
+[tool.ruff.lint.per-file-ignores]
+"*?__init__.py" = ["F401"]

@@ -4,3 +4,8 @@
 *.jpg
 *.DS_Store
 *.json
+*.zip
+
+# Poetry files
+.venv/
+.mypy_cache/

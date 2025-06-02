@@ -1,0 +1,15 @@
+[tools]
+python = "3.13"
+
+# Python
+
+[tasks.python-install]
+run = "poetry install"
+
+# Setup
+[tasks.setup]
+depends = ["python-install"]
+
+# Run
+[tasks.process-photos]
+run = "poetry run python process-photos.py"
