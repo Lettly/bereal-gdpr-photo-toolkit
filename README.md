@@ -4,11 +4,8 @@ When you request your data from BeReal, you receive a ZIP file containing all th
 
 The script `process-photos.py` automates the process of converting the images to JPEG, along with renaming and updating the EXIF data using the information from the JSON file.
 
----
-
 # Features
 
--
 -   **Automatic Conversion:** Converts all BeReal WebP images to JPEG format for better compatibility and metadata support.
 -   **EXIF & IPTC Metadata Injection:** Adds original capture date, geolocation, and caption to JPEGs using data from the BeReal JSON file.
 -   **Filename Renaming:** Renames images to include the date/time and other relevant info, making them easier to browse and search.
@@ -21,8 +18,6 @@ The script `process-photos.py` automates the process of converting the images to
 -   **Safe Overwrite:** Will not overwrite your original BeReal files; outputs are saved separately.
 -   **Verbose Logging:** Provides clear output about what is being processed and any issues encountered.
 
----
-
 # Prerequisites
 
 -   [Poetry](https://python-poetry.org/docs/#installing-with-pipx)
@@ -32,8 +27,6 @@ The script `process-photos.py` automates the process of converting the images to
 ## Request your data
 
 Request your data according to Article 15 GDPR by using the in-app chat. You can generate a template using [datarequests.org](https://www.datarequests.org/generator/).
-
----
 
 # Running the Script
 
@@ -65,8 +58,6 @@ Request your data according to Article 15 GDPR by using the in-app chat. You can
     poetry run python process-photos.py
     ```
 
----
-
 # Data Requirement
 
 The script processes images based on data provided in a JSON file obtained from BeReal. The JSON file should follow this format:
@@ -87,8 +78,6 @@ The script processes images based on data provided in a JSON file obtained from 
     }
 ]
 ```
-
----
 
 # Advanced Settings
 
