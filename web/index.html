@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>BeReal GDPR Photo Toolkit - Web App</title>
+        <link rel="stylesheet" href="styles.css" />
+        <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
+    </head>
+    <body>
+        <div class="container">
+            <header>
+                <h1>🤳 BeReal GDPR Photo Toolkit</h1>
+                <p>
+                    Process your BeReal photos and videos directly in your
+                    browser
+                </p>
+            </header>
+
+            <div class="upload-section">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-content">
+                        <div class="upload-icon">📁</div>
+                        <h3>Upload Your BeReal Data</h3>
+                        <p>
+                            Drop your BeReal export ZIP file here or click to
+                            browse
+                        </p>
+                        <input
+                            type="file"
+                            id="fileInput"
+                            accept=".zip"
+                            multiple
+                        />
+                        <button
+                            class="browse-btn"
+                            onclick="document.getElementById('fileInput').click()"
+                        >
+                            Browse Files
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div
+                class="settings-section"
+                id="settingsSection"
+                style="display: none"
+            >
+                <h2>Processing Settings</h2>
+                <div class="settings-grid">
+                    <div class="setting-item">
+                        <label>
+                            <input type="checkbox" id="convertToJpeg" checked />
+                            Convert WebP images to JPEG
+                        </label>
+                        <small
+                            >Enables metadata injection and better
+                            compatibility</small
+                        >
+                    </div>
+                    <div class="setting-item">
+                        <label>
+                            <input type="checkbox" id="keepOriginalFilename" />
+                            Keep original filename in output
+                        </label>
+                        <small
+                            >Include original filename in the processed file
+                            name</small
+                        >
+                    </div>
+                    <div class="setting-item">
+                        <label>
+                            <input type="checkbox" id="createCombinedImages" />
+                            Create combined images
+                        </label>
+                        <small
+                            >Combine primary and secondary images like original
+                            BeReal memories</small
+                        >
+                    </div>
+                </div>
+                <button
+                    class="process-btn"
+                    id="processBtn"
+                    onclick="startProcessing()"
+                >
+                    Start Processing
+                </button>
+            </div>
+
+            <div
+                class="progress-section"
+                id="progressSection"
+                style="display: none"
+            >
+                <h2>Processing Progress</h2>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-text" id="progressText">
+                    Initializing...
+                </div>
+                <div
+                    class="memory-indicator"
+                    id="memoryIndicator"
+                    style="display: none"
+                >
+                    <small
+                        >Memory: <span id="memoryUsage">0MB</span> /
+                        <span id="memoryLimit">0MB</span></small
+                    >
+                </div>
+                <div class="debug-controls" style="margin-bottom: 15px">
+                    <button class="debug-btn" onclick="toggleDebugMode()">
+                        🔧 Debug Mode
+                    </button>
+                    <button class="debug-btn" onclick="clearLogs()">
+                        🗑️ Clear Logs
+                    </button>
+                    <button class="debug-btn" onclick="showSystemInfo()">
+                        ℹ️ System Info
+                    </button>
+                    <button class="debug-btn" onclick="forceGC()">
+                        🧹 Force Cleanup
+                    </button>
+                </div>
+                <div class="log-output" id="logOutput"></div>
+            </div>
+
+            <div
+                class="results-section"
+                id="resultsSection"
+                style="display: none"
+            >
+                <h2>Processing Complete</h2>
+                <div class="results-summary" id="resultsSummary"></div>
+                <div class="download-section">
+                    <button
+                        class="download-btn"
+                        id="downloadBtn"
+                        onclick="downloadResults()"
+                    >
+                        📥 Download Processed Files
+                    </button>
+                </div>
+            </div>
+
+            <div class="info-section">
+                <h2>About This Tool</h2>
+                <p>
+                    This web application processes BeReal GDPR export data
+                    directly in your browser using WebAssembly. Your files never
+                    leave your device, ensuring complete privacy.
+                </p>
+
+                <div class="features">
+                    <div class="feature">
+                        <h3>🖼️ Image Processing</h3>
+                        <p>
+                            Converts WebP to JPEG, adds EXIF/IPTC metadata
+                            including timestamps, GPS coordinates, and captions
+                        </p>
+                    </div>
+                    <div class="feature">
+                        <h3>🎥 Video Processing</h3>
+                        <p>
+                            Processes MP4 videos with metadata injection
+                            (limited functionality in browser)
+                        </p>
+                    </div>
+                    <div class="feature">
+                        <h3>🔒 Privacy First</h3>
+                        <p>
+                            All processing happens locally in your browser - no
+                            data is sent to any server
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script src="app.js"></script>
+    </body>
+</html>

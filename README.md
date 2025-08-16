@@ -2,7 +2,32 @@
 
 When you request your data from BeReal, you receive a ZIP file containing all your photos and videos. Images come in WebP format and videos in MP4 format, but unfortunately they don't contain proper metadata such as when the content was captured. This information is stored in a JSON file, which is great for processing the data but not easily human readable.
 
+This toolkit provides **two ways** to process your BeReal data:
+
+## 🖥️ Desktop Version (Recommended)
+
 The script `process-photos.py` automates the process of converting images to JPEG and processing videos, along with renaming and updating metadata using the information from the BeReal JSON file.
+
+## 🌐 Web Version (Browser-Based)
+
+A complete web application that runs entirely in your browser using WebAssembly. No installation required - just upload your files and process them directly in the browser with complete privacy.
+
+**[🚀 Try the Web Version](web/index.html)** | **[📖 Web Version Documentation](web/README.md)**
+
+### 🔄 Which Version Should I Use?
+
+| Feature              | Desktop Version              | Web Version                      |
+| -------------------- | ---------------------------- | -------------------------------- |
+| **Setup Required**   | ✅ Python + Poetry           | ❌ None - just open in browser   |
+| **Privacy**          | ✅ Complete                  | ✅ Complete (client-side only)   |
+| **Performance**      | ✅ Fast                      | ⚠️ Slower (WebAssembly overhead) |
+| **Image Processing** | ✅ Full support              | ✅ Full support                  |
+| **Video Processing** | ✅ Full support + audio sync | ⚠️ Limited (no audio sync)       |
+| **File Size Limits** | ✅ No limits                 | ⚠️ Browser memory limits         |
+| **Offline Usage**    | ✅ Complete                  | ✅ After initial load            |
+| **Cross-Platform**   | ✅ Windows/Mac/Linux         | ✅ Any modern browser            |
+
+**Recommendation**: Use the **desktop version** for best performance and full features. Use the **web version** for convenience and when you can't install software.
 
 # Features
 

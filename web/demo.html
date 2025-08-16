@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>BeReal Toolkit - Demo & Test</title>
+        <style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                    Roboto, sans-serif;
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+                line-height: 1.6;
+            }
+            .demo-section {
+                background: #f8f9fa;
+                border-radius: 8px;
+                padding: 20px;
+                margin: 20px 0;
+            }
+            .test-button {
+                background: #007bff;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 5px;
+                cursor: pointer;
+                margin: 5px;
+            }
+            .test-button:hover {
+                background: #0056b3;
+            }
+            .log-area {
+                background: #f1f3f4;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                padding: 10px;
+                height: 200px;
+                overflow-y: auto;
+                font-family: monospace;
+                font-size: 12px;
+            }
+            .status {
+                padding: 10px;
+                border-radius: 4px;
+                margin: 10px 0;
+            }
+            .status.success {
+                background: #d4edda;
+                color: #155724;
+            }
+            .status.error {
+                background: #f8d7da;
+                color: #721c24;
+            }
+            .status.info {
+                background: #d1ecf1;
+                color: #0c5460;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>🧪 BeReal Toolkit - Demo & Test Page</h1>
+
+        <div class="demo-section">
+            <h2>Environment Tests</h2>
+            <p>Test the web application environment and dependencies:</p>
+
+            <button class="test-button" onclick="testBrowserSupport()">
+                Test Browser Support
+            </button>
+            <button class="test-button" onclick="testPyodideLoad()">
+                Test Pyodide Loading
+            </button>
+            <button class="test-button" onclick="testImageProcessing()">
+                Test Image Processing
+            </button>
+            <button class="test-button" onclick="testZipHandling()">
+                Test ZIP Handling
+            </button>
+
+            <div id="testResults"></div>
+        </div>
+
+        <div class="demo-section">
+            <h2>Sample Data Generator</h2>
+            <p>Generate sample BeReal data for testing:</p>
+
+            <button class="test-button" onclick="generateSampleData()">
+                Generate Sample posts.json
+            </button>
+            <button class="test-button" onclick="createTestImage()">
+                Create Test WebP Image
+            </button>
+
+            <div id="sampleResults"></div>
+        </div>
+
+        <div class="demo-section">
+            <h2>Performance Tests</h2>
+            <p>Test processing performance with different file sizes:</p>
+
+            <button class="test-button" onclick="performanceTest('small')">
+                Small Files (100KB)
+            </button>
+            <button class="test-button" onclick="performanceTest('medium')">
+                Medium Files (1MB)
+            </button>
+            <button class="test-button" onclick="performanceTest('large')">
+                Large Files (5MB)
+            </button>
+
+            <div id="performanceResults"></div>
+        </div>
+
+        <div class="demo-section">
+            <h2>Debug Console</h2>
+            <div id="debugLog" class="log-area"></div>
+            <button class="test-button" onclick="clearLog()">Clear Log</button>
+        </div>
+
+        <div class="demo-section">
+            <h2>Quick Start</h2>
+            <p>Ready to process your BeReal data?</p>
+            <a
+                href="index.html"
+                class="test-button"
+                style="text-decoration: none; display: inline-block"
+            >
+                🚀 Launch BeReal Toolkit
+            </a>
+        </div>
+
+        <script>
+            let pyodide = null;
+
+            function log(message, type = "info") {
+                const timestamp = new Date().toLocaleTimeString();
+                const logArea = document.getElementById("debugLog");
+                logArea.innerHTML += `[${timestamp}] ${message}\n`;
+                logArea.scrollTop = logArea.scrollHeight;
+                console.log(message);
+            }
+
+            function clearLog() {
+                document.getElementById("debugLog").innerHTML = "";
+            }
+
+            function showResult(elementId, message, type = "info") {
+                const element = document.getElementById(elementId);
+                const div = document.createElement("div");
+                div.className = `status ${type}`;
+                div.textContent = message;
+                element.appendChild(div);
+            }
+
+            async function testBrowserSupport() {
+                log("Testing browser support...");
+                const results = [];
+
+                // Test WebAssembly support
+                if (typeof WebAssembly === "object") {
+                    results.push("✅ WebAssembly supported");
+                } else {
+                    results.push("❌ WebAssembly not supported");
+                }
+
+                // Test File API support
+                if (
+                    window.File &&
+                    window.FileReader &&
+                    window.FileList &&
+                    window.Blob
+                ) {
+                    results.push("✅ File API supported");
+                } else {
+                    results.push("❌ File API not supported");
+                }
+
+                // Test Web Workers support
+                if (typeof Worker !== "undefined") {
+                    results.push("✅ Web Workers supported");
+                } else {
+                    results.push("❌ Web Workers not supported");
+                }
+
+                // Test IndexedDB support
+                if (window.indexedDB) {
+                    results.push("✅ IndexedDB supported");
+                } else {
+                    results.push("❌ IndexedDB not supported");
+                }
+
+                const allSupported = !results.some((r) => r.includes("❌"));
+                showResult(
+                    "testResults",
+                    results.join("\n"),
+                    allSupported ? "success" : "error"
+                );
+                log(
+                    `Browser support test completed: ${
+                        allSupported ? "PASS" : "FAIL"
+                    }`
+                );
+            }
+
+            async function testPyodideLoad() {
+                log("Testing Pyodide loading...");
+                try {
+                    if (!pyodide) {
+                        log("Loading Pyodide...");
+                        pyodide = await loadPyodide({
+                            indexURL:
+                                "https://cdn.jsdelivr.net/pyodide/v0.24.1/full/",
+                        });
+                    }
+
+                    // Test basic Python execution
+                    const result = pyodide.runPython("2 + 2");
+                    if (result === 4) {
+                        showResult(
+                            "testResults",
+                            "✅ Pyodide loaded and working correctly",
+                            "success"
+                        );
+                        log("Pyodide test: PASS");
+                    } else {
+                        showResult(
+                            "testResults",
+                            "❌ Pyodide execution error",
+                            "error"
+                        );
+                        log("Pyodide test: FAIL");
+                    }
+                } catch (error) {
+                    showResult(
+                        "testResults",
+                        `❌ Pyodide loading failed: ${error.message}`,
+                        "error"
+                    );
+                    log(`Pyodide test: FAIL - ${error.message}`);
+                }
+            }
+
+            async function testImageProcessing() {
+                log("Testing image processing capabilities...");
+                try {
+                    if (!pyodide) {
+                        await testPyodideLoad();
+                    }
+
+                    // Install PIL
+                    log("Installing Pillow...");
+                    await pyodide.loadPackage(["micropip"]);
+                    const micropip = pyodide.pyimport("micropip");
+                    await micropip.install(["Pillow"]);
+
+                    // Test basic image operations
+                    const testCode = `
+from PIL import Image
+import io
+
+# Create a test image
+img = Image.new('RGB', (100, 100), color='red')
+output = io.BytesIO()
+img.save(output, format='JPEG')
+len(output.getvalue())
+`;
+
+                    const result = pyodide.runPython(testCode);
+                    if (result > 0) {
+                        showResult(
+                            "testResults",
+                            "✅ Image processing working correctly",
+                            "success"
+                        );
+                        log("Image processing test: PASS");
+                    } else {
+                        showResult(
+                            "testResults",
+                            "❌ Image processing failed",
+                            "error"
+                        );
+                        log("Image processing test: FAIL");
+                    }
+                } catch (error) {
+                    showResult(
+                        "testResults",
+                        `❌ Image processing test failed: ${error.message}`,
+                        "error"
+                    );
+                    log(`Image processing test: FAIL - ${error.message}`);
+                }
+            }
+
+            async function testZipHandling() {
+                log("Testing ZIP file handling...");
+                try {
+                    // Load JSZip
+                    if (!window.JSZip) {
+                        log("Loading JSZip...");
+                        await new Promise((resolve, reject) => {
+                            const script = document.createElement("script");
+                            script.src =
+                                "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+                            script.onload = resolve;
+                            script.onerror = reject;
+                            document.head.appendChild(script);
+                        });
+                    }
+
+                    // Test ZIP creation and extraction
+                    const zip = new JSZip();
+                    zip.file("test.txt", "Hello World!");
+                    const zipBlob = await zip.generateAsync({ type: "blob" });
+
+                    // Test extraction
+                    const extractedZip = new JSZip();
+                    await extractedZip.loadAsync(zipBlob);
+                    const extractedContent = await extractedZip
+                        .file("test.txt")
+                        .async("string");
+
+                    if (extractedContent === "Hello World!") {
+                        showResult(
+                            "testResults",
+                            "✅ ZIP handling working correctly",
+                            "success"
+                        );
+                        log("ZIP handling test: PASS");
+                    } else {
+                        showResult(
+                            "testResults",
+                            "❌ ZIP handling failed",
+                            "error"
+                        );
+                        log("ZIP handling test: FAIL");
+                    }
+                } catch (error) {
+                    showResult(
+                        "testResults",
+                        `❌ ZIP handling test failed: ${error.message}`,
+                        "error"
+                    );
+                    log(`ZIP handling test: FAIL - ${error.message}`);
+                }
+            }
+
+            async function generateSampleData() {
+                log("Generating sample BeReal data...");
+
+                const samplePosts = [
+                    {
+                        primary: {
+                            path: "/photos/primary_001.webp",
+                            mediaType: "image",
+                        },
+                        secondary: {
+                            path: "/photos/secondary_001.webp",
+                            mediaType: "image",
+                        },
+                        takenAt: "2024-01-15T14:30:25.123Z",
+                        location: {
+                            latitude: 40.7128,
+                            longitude: -74.006,
+                        },
+                        caption: "Sample BeReal from New York!",
+                    },
+                    {
+                        primary: {
+                            path: "/photos/primary_002.webp",
+                            mediaType: "image",
+                        },
+                        secondary: {
+                            path: "/photos/secondary_002.webp",
+                            mediaType: "image",
+                        },
+                        takenAt: "2024-01-16T18:45:10.456Z",
+                        location: {
+                            latitude: 51.5074,
+                            longitude: -0.1278,
+                        },
+                        caption: "London calling! 🇬🇧",
+                    },
+                ];
+
+                const jsonBlob = new Blob(
+                    [JSON.stringify(samplePosts, null, 2)],
+                    { type: "application/json" }
+                );
+                const url = URL.createObjectURL(jsonBlob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "sample_posts.json";
+                a.click();
+                URL.revokeObjectURL(url);
+
+                showResult(
+                    "sampleResults",
+                    "✅ Sample posts.json downloaded",
+                    "success"
+                );
+                log("Sample data generated and downloaded");
+            }
+
+            async function createTestImage() {
+                log("Creating test WebP image...");
+                try {
+                    if (!pyodide) {
+                        await testPyodideLoad();
+                    }
+
+                    // Ensure Pillow is installed
+                    await pyodide.loadPackage(["micropip"]);
+                    const micropip = pyodide.pyimport("micropip");
+                    await micropip.install(["Pillow"]);
+
+                    const imageCode = `
+from PIL import Image, ImageDraw
+import io
+import base64
+
+# Create a test image
+img = Image.new('RGB', (400, 300), color='lightblue')
+draw = ImageDraw.Draw(img)
+
+# Add some content
+draw.rectangle([50, 50, 350, 250], fill='white', outline='black', width=2)
+draw.text((200, 150), 'Test Image', fill='black', anchor='mm')
+
+# Save as WebP
+output = io.BytesIO()
+img.save(output, format='WEBP', quality=80)
+base64.b64encode(output.getvalue()).decode()
+`;
+
+                    const base64Data = pyodide.runPython(imageCode);
+                    const blob = new Blob(
+                        [
+                            Uint8Array.from(atob(base64Data), (c) =>
+                                c.charCodeAt(0)
+                            ),
+                        ],
+                        { type: "image/webp" }
+                    );
+
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = "test_image.webp";
+                    a.click();
+                    URL.revokeObjectURL(url);
+
+                    showResult(
+                        "sampleResults",
+                        "✅ Test WebP image created and downloaded",
+                        "success"
+                    );
+                    log("Test image created and downloaded");
+                } catch (error) {
+                    showResult(
+                        "sampleResults",
+                        `❌ Test image creation failed: ${error.message}`,
+                        "error"
+                    );
+                    log(`Test image creation: FAIL - ${error.message}`);
+                }
+            }
+
+            async function performanceTest(size) {
+                log(`Starting ${size} performance test...`);
+                const startTime = performance.now();
+
+                try {
+                    if (!pyodide) {
+                        await testPyodideLoad();
+                    }
+
+                    // Ensure Pillow is installed
+                    await pyodide.loadPackage(["micropip"]);
+                    const micropip = pyodide.pyimport("micropip");
+                    await micropip.install(["Pillow"]);
+
+                    const sizeMap = {
+                        small: [200, 150],
+                        medium: [800, 600],
+                        large: [1600, 1200],
+                    };
+
+                    const [width, height] = sizeMap[size];
+
+                    const perfCode = `
+from PIL import Image
+import io
+import time
+
+start = time.time()
+
+# Create and process image
+img = Image.new('RGB', (${width}, ${height}), color='red')
+output = io.BytesIO()
+img.save(output, format='JPEG', quality=85)
+
+# Simulate some processing
+processed_img = Image.open(io.BytesIO(output.getvalue()))
+final_output = io.BytesIO()
+processed_img.save(final_output, format='JPEG', quality=80)
+
+end = time.time()
+{
+    'processing_time': end - start,
+    'image_size': len(final_output.getvalue()),
+    'dimensions': [${width}, ${height}]
+}
+`;
+
+                    const result = pyodide.runPython(perfCode).toJs();
+                    const totalTime = performance.now() - startTime;
+
+                    const message = `${size.toUpperCase()} test completed:
+• Total time: ${totalTime.toFixed(2)}ms
+• Python processing: ${(result.get("processing_time") * 1000).toFixed(2)}ms
+• Image size: ${(result.get("image_size") / 1024).toFixed(1)}KB
+• Dimensions: ${result.get("dimensions").join("x")}`;
+
+                    showResult("performanceResults", message, "success");
+                    log(
+                        `Performance test (${size}): ${totalTime.toFixed(2)}ms`
+                    );
+                } catch (error) {
+                    showResult(
+                        "performanceResults",
+                        `❌ ${size} performance test failed: ${error.message}`,
+                        "error"
+                    );
+                    log(`Performance test (${size}): FAIL - ${error.message}`);
+                }
+            }
+
+            // Auto-run browser support test on load
+            window.addEventListener("load", () => {
+                log("Demo page loaded");
+                testBrowserSupport();
+            });
+        </script>
+    </body>
+</html>
