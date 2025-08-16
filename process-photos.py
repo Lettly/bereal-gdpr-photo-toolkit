@@ -110,14 +110,14 @@ print(
 print(
     "Default settings are:\n"
     "1. Copied images are converted from WebP to JPEG\n"
-    "2. Converted images' filenames do not contain the original filename\n"
-    "3. Combined images are created on top of converted, singular images"
+    "2. Converted images' filenames contain the original filename\n"
+    "3. Combined images are NOT created"
 )
 advanced_settings = (
     input(
         "\nEnter "
         + STYLING["BOLD"]
-        + "'yes'"
+        + "'yes' "
         + STYLING["RESET"]
         + "for advanced settings or press any key to continue with default settings: "
     )
@@ -131,7 +131,7 @@ if advanced_settings != "yes":
 ## Default responses
 convert_to_jpeg = "yes"
 keep_original_filename = "no"
-create_combined_images = "yes"
+create_combined_images = "no"
 
 ## Proceed with advanced settings if chosen
 if advanced_settings == "yes":
@@ -290,6 +290,75 @@ def update_exif(image_path, datetime_original, location=None, caption=None):
 
     except Exception as e:
         logging.error(f"Failed to update EXIF data for {image_path}: {e}")
+
+
+def has_audio_stream(video_path):
+    """Check if a video file has an audio stream"""
+    try:
+        command = [
+            "ffprobe",
+            "-v",
+            "quiet",
+            "-select_streams",
+            "a",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "csv=p=0",
+            str(video_path),
+        ]
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        return "audio" in result.stdout
+    except Exception as e:
+        logging.error(f"Failed to check audio stream for {video_path}: {e}")
+        return False
+
+
+def copy_audio_between_videos(source_video, target_video):
+    """Copy audio from source video to target video if target has no audio"""
+    try:
+        # Create temporary file for the result
+        temp_file = target_video.parent / (target_video.stem + "_with_audio.mp4")
+
+        command = [
+            "ffmpeg",
+            "-i",
+            str(target_video),  # Video input (no audio)
+            "-i",
+            str(source_video),  # Audio source
+            "-c:v",
+            "copy",  # Copy video stream as-is
+            "-c:a",
+            "aac",  # Encode audio to AAC
+            "-map",
+            "0:v:0",  # Map video from first input
+            "-map",
+            "1:a:0",  # Map audio from second input
+            "-shortest",  # End when shortest stream ends
+            "-y",  # Overwrite output file
+            str(temp_file),
+        ]
+
+        subprocess.run(command, check=True, capture_output=True)
+        logging.info(
+            f"Successfully copied audio from {source_video.name} to {target_video.name}"
+        )
+
+        # Replace the original file with the new one
+        os.replace(temp_file, target_video)
+        return True
+
+    except subprocess.CalledProcessError as e:
+        logging.error(
+            f"Failed to copy audio from {source_video} to {target_video}: {e}"
+        )
+        # Clean up temp file if it exists
+        if temp_file.exists():
+            temp_file.unlink()
+        return False
+    except Exception as e:
+        logging.error(f"Unexpected error copying audio: {e}")
+        return False
 
 
 def update_mp4_metadata(video_path, datetime_original, location=None, caption=None):
@@ -486,6 +555,9 @@ for entry in data:
         )  # This will be None if 'location' is not present
         caption = entry.get("caption")  # This will be None if 'caption' is not present
 
+        # Store processed video paths for audio synchronization
+        processed_videos = {}
+
         # Process primary and secondary media (images or videos)
         for path, role, is_video in [
             (primary_path, "primary", primary_is_video),
@@ -513,6 +585,9 @@ for entry in data:
                 # Update video metadata
                 update_mp4_metadata(new_path, taken_at, location, caption)
                 logging.info(f"Metadata added to {role} video.")
+
+                # Store processed video path for audio synchronization
+                processed_videos[role] = new_path
 
                 if role == "primary":
                     primary_images.append(
@@ -599,6 +674,37 @@ for entry in data:
                 logging.info(f"Successfully processed {role} image.")
                 processed_files_count += 1
                 print("")
+
+        # Handle audio synchronization between primary and secondary videos
+        if (
+            len(processed_videos) == 2
+            and "primary" in processed_videos
+            and "secondary" in processed_videos
+        ):
+            primary_video = processed_videos["primary"]
+            secondary_video = processed_videos["secondary"]
+
+            primary_has_audio = has_audio_stream(primary_video)
+            secondary_has_audio = has_audio_stream(secondary_video)
+
+            if primary_has_audio and not secondary_has_audio:
+                logging.info(f"Copying audio from primary to secondary video")
+                if copy_audio_between_videos(primary_video, secondary_video):
+                    logging.info(f"Successfully added audio to secondary video")
+                else:
+                    logging.warning(f"Failed to copy audio to secondary video")
+            elif secondary_has_audio and not primary_has_audio:
+                logging.info(f"Copying audio from secondary to primary video")
+                if copy_audio_between_videos(secondary_video, primary_video):
+                    logging.info(f"Successfully added audio to primary video")
+                else:
+                    logging.warning(f"Failed to copy audio to primary video")
+            elif not primary_has_audio and not secondary_has_audio:
+                logging.info(
+                    f"Neither primary nor secondary video has audio - no sync needed"
+                )
+            else:
+                logging.info(f"Both videos have audio - no sync needed")
 
         # Handle BTS Media (MP4)
         if "btsMedia" in entry:
