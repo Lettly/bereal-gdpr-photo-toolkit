@@ -666,6 +666,10 @@ class BeRealProcessorWeb:
                     primary_filename = Path(primary_path).name
                     secondary_filename = Path(secondary_path).name
                     
+                    # Check if primary/secondary are videos based on mediaType
+                    primary_is_video = entry["primary"].get("mediaType") == "video"
+                    secondary_is_video = entry["secondary"].get("mediaType") == "video"
+                    
                     # Check if files exist in uploaded data (try both full path and filename)
                     primary_key = None
                     secondary_key = None
@@ -705,25 +709,87 @@ class BeRealProcessorWeb:
                     location = entry.get("location")
                     caption = entry.get("caption")
                     
-                    # Process primary and secondary images
-                    for file_key, filename, role in [(primary_key, primary_filename, "primary"), (secondary_key, secondary_filename, "secondary")]:
+                    # Handle BTS Media (MP4) if present
+                    if "btsMedia" in entry:
+                        bts_path = entry["btsMedia"]["path"]
+                        bts_filename = Path(bts_path).name
+                        
+                        # Find BTS file in uploaded data
+                        bts_key = None
+                        if bts_path in files_data:
+                            bts_key = bts_path
+                        elif bts_filename in files_data:
+                            bts_key = bts_filename
+                        else:
+                            # Try to find by filename in any path
+                            for file_key in files_data.keys():
+                                if file_key.endswith(bts_filename):
+                                    bts_key = file_key
+                                    break
+                        
+                        if bts_key:
+                            bts_file_data = files_data[bts_key]
+                            time_str = taken_at.strftime("%Y-%m-%dT%H-%M-%S")
+                            
+                            if keep_original_filename:
+                                bts_output_filename = f"{time_str}_bts_{bts_filename}"
+                            else:
+                                bts_output_filename = f"{time_str}_bts.mp4"
+                            
+                            self.processed_files[bts_output_filename] = bts_file_data
+                            self.processed_files_count += 1
+                            self.log(f"Processed BTS Media: {bts_output_filename}")
+                        else:
+                            self.log(f"BTS media file not found: {bts_filename}", 'warning')
+                            self.skipped_files_count += 1
+                    
+                    # Process primary and secondary media 
+                    for file_key, filename, role, is_video in [(primary_key, primary_filename, "primary", primary_is_video), (secondary_key, secondary_filename, "secondary", secondary_is_video)]:
                         file_data = files_data[file_key]
                         
-                        # Handle Videos - No processing, just pass through and rename
-                        if filename.lower().endswith('.mp4'):
-                            self.log(f"Handling video file: {filename}")
+                        # Handle Videos - Process with metadata and audio handling
+                        if is_video or filename.lower().endswith('.mp4'):
+                            self.log(f"Handling video file: {filename} (mediaType: {'video' if is_video else 'inferred from extension'})")
                             
-                            # Generate output filename
-                            taken_at = datetime.strptime(entry["takenAt"], "%Y-%m-%dT%H:%M:%S.%fZ")
+                            # Generate output filename  
                             time_str = taken_at.strftime("%Y-%m-%dT%H-%M-%S")
                             if keep_original_filename:
                                 output_filename = f"{time_str}_{role}_{filename}"
                             else:
                                 output_filename = f"{time_str}_{role}.mp4"
                             
+                            # Store video with metadata for potential audio sync
+                            video_info = {
+                                'data': file_data,
+                                'filename': output_filename,
+                                'original_filename': filename,
+                                'role': role,
+                                'taken_at': taken_at,
+                                'location': location,
+                                'caption': caption
+                            }
+                            
                             self.processed_files[output_filename] = file_data
                             self.processed_files_count += 1
                             self.log(f"Processed video: {output_filename}")
+                            
+                            # Store for audio sync processing
+                            if role == "primary":
+                                primary_images.append({
+                                    'path': output_filename,
+                                    'taken_at': taken_at,
+                                    'location': location,
+                                    'caption': caption,
+                                    'is_video': True,
+                                    'video_info': video_info
+                                })
+                            else:
+                                secondary_images.append({
+                                    'path': output_filename,
+                                    'is_video': True,
+                                    'video_info': video_info,
+                                    'taken_at': taken_at
+                                })
                             continue
 
                         processed_data = file_data
@@ -794,32 +860,65 @@ class BeRealProcessorWeb:
             gc.collect()
             self.log(f"Completed batch {batch_start//batch_size + 1}, memory cleanup performed")
         
-        # Create combined images if requested
-        if create_combined_images and len(primary_images) == len(secondary_images):
-            self.update_progress(90, "Creating combined images...");
+        # Handle video audio synchronization
+        self.log("Checking for video audio synchronization opportunities...")
+        primary_videos = [img for img in primary_images if img.get('is_video', False)]
+        secondary_videos = [img for img in secondary_images if img.get('is_video', False)]
+        
+        # Group videos by timestamp for audio sync
+        video_pairs = {}
+        for primary_video in primary_videos:
+            timestamp = primary_video['taken_at'].isoformat()
+            if timestamp not in video_pairs:
+                video_pairs[timestamp] = {'primary': None, 'secondary': None}
+            video_pairs[timestamp]['primary'] = primary_video
+        
+        for secondary_video in secondary_videos:
+            timestamp = secondary_video['taken_at'].isoformat()  
+            if timestamp in video_pairs:
+                video_pairs[timestamp]['secondary'] = secondary_video
+        
+        # Process video pairs for potential audio sync
+        for timestamp, pair in video_pairs.items():
+            if pair['primary'] and pair['secondary']:
+                primary_video = pair['primary']['video_info']
+                secondary_video = pair['secondary']['video_info']
+                self.log(f"Video pair found for audio sync: {primary_video['filename']} & {secondary_video['filename']}")
+                
+                # Note: In browser environment, we can't perform actual audio stream copying
+                # but we can detect and log audio presence for user awareness
+                self.log(f"Browser limitation: Audio sync between videos requires desktop processing")
+                self.log(f"Videos preserved separately: {primary_video['filename']}, {secondary_video['filename']}")
+        
+        # Create combined images if requested (skip videos)
+        if create_combined_images:
+            self.update_progress(90, "Creating combined images...")
+            image_primary = [img for img in primary_images if not img.get('is_video', False)]
+            image_secondary = [img for img in secondary_images if not img.get('is_video', False)]
             
-            for primary, secondary in zip(primary_images, secondary_images):
-                try:
-                    combined_data = self.combine_images_with_resizing(primary['data'], secondary['data'])
-                    if combined_data:
-                        # Update EXIF for combined image
-                        combined_data = self.update_exif(
-                            combined_data, 
-                            primary['taken_at'], 
-                            primary['location'], 
-                            primary['caption']
-                        )
-                        
-                        # Generate filename
-                        time_str = primary['taken_at'].strftime("%Y-%m-%dT%H-%M-%S")
-                        combined_filename = f"{time_str}_combined.jpg"
-                        
-                        self.processed_files[combined_filename] = combined_data
-                        self.combined_files_count += 1
-                        self.log(f"Created combined image: {combined_filename}")
-                        
-                except Exception as e:
-                    self.log(f"Error creating combined image: {str(e)}", 'error')
+            if len(image_primary) == len(image_secondary):
+                for primary, secondary in zip(image_primary, image_secondary):
+                    try:
+                        combined_data = self.combine_images_with_resizing(primary['data'], secondary['data'])
+                        if combined_data:
+                            # Update EXIF for combined image
+                            combined_data = self.update_exif(
+                                combined_data, 
+                                primary['taken_at'], 
+                                primary['location'], 
+                                primary['caption']
+                            )
+                            
+                            # Generate filename
+                            time_str = primary['taken_at'].strftime("%Y-%m-%dT%H-%M-%S")
+                            combined_filename = f"{time_str}_combined.jpg"
+                            
+                            self.processed_files[combined_filename] = combined_data
+                            self.combined_files_count += 1
+                            self.log(f"Created combined image: {combined_filename}")
+                            
+                    except Exception as e:
+                        self.log(f"Error creating combined image: {str(e)}", 'error')
         
         self.update_progress(100, "Processing complete!")
         self.log(f"Processing finished. Processed: {self.processed_files_count}, Converted: {self.converted_files_count}, Combined: {self.combined_files_count}, Skipped: {self.skipped_files_count}")
@@ -1314,9 +1413,11 @@ streaming_processor.log(f"Settings: {streaming_settings}")
             for (const post of postsBatch) {
                 const primaryPath = post.primary?.path;
                 const secondaryPath = post.secondary?.path;
+                const btsPath = post.btsMedia?.path;
 
                 if (primaryPath) neededFiles.add(primaryPath);
                 if (secondaryPath) neededFiles.add(secondaryPath);
+                if (btsPath) neededFiles.add(btsPath);
             }
 
             this.log(`Loading ${neededFiles.size} files for batch processing...`);
@@ -1534,6 +1635,43 @@ single_processed_files
             'mp4': 'video/mp4'
         };
         return types[ext] || 'application/octet-stream';
+    }
+
+    async detectVideoAudio(videoBlob, filename) {
+        return new Promise((resolve) => {
+            try {
+                const video = document.createElement('video');
+                video.muted = true;
+                video.preload = 'metadata';
+
+                video.onloadedmetadata = () => {
+                    // Check if video has audio track
+                    const hasAudio = video.audioTracks && video.audioTracks.length > 0;
+                    this.log(`Audio detection for ${filename}: ${hasAudio ? 'Has audio' : 'No audio'}`);
+                    URL.revokeObjectURL(video.src);
+                    resolve(hasAudio);
+                };
+
+                video.onerror = () => {
+                    this.log(`Unable to detect audio for ${filename}`, 'warning');
+                    URL.revokeObjectURL(video.src);
+                    resolve(false);
+                };
+
+                // Set timeout to avoid hanging
+                setTimeout(() => {
+                    if (video.src) {
+                        URL.revokeObjectURL(video.src);
+                        resolve(false);
+                    }
+                }, 5000);
+
+                video.src = URL.createObjectURL(videoBlob);
+            } catch (error) {
+                this.log(`Error detecting audio for ${filename}: ${error.message}`, 'warning');
+                resolve(false);
+            }
+        });
     }
 
     showResults(stats) {

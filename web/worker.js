@@ -231,9 +231,11 @@ class BeRealProcessorWeb:
                 progress = 50 + (processed_entries / total_entries) * 40
                 self.update_progress(progress, f"Processing entry {processed_entries}/{total_entries}")
                 
-                # Extract filenames
+                # Extract filenames and check media types
                 primary_filename = Path(entry["primary"]["path"]).name
                 secondary_filename = Path(entry["secondary"]["path"]).name
+                primary_is_video = entry["primary"].get("mediaType") == "video"
+                secondary_is_video = entry["secondary"].get("mediaType") == "video"
                 
                 # Check if files exist in uploaded data
                 if primary_filename not in files_data or secondary_filename not in files_data:
@@ -246,14 +248,25 @@ class BeRealProcessorWeb:
                 location = entry.get("location")
                 caption = entry.get("caption")
                 
-                # Process primary and secondary images
-                for filename, role in [(primary_filename, "primary"), (secondary_filename, "secondary")]:
+                # Process primary and secondary media
+                for filename, role, is_video in [(primary_filename, "primary", primary_is_video), (secondary_filename, "secondary", secondary_is_video)]:
                     file_data = files_data[filename]
                     
-                    # Skip if it's a video (limited support in browser)
-                    if filename.lower().endswith('.mp4'):
-                        self.log(f"Skipping video file: {filename} (limited browser support)")
-                        self.skipped_files_count += 1
+                    # Handle Videos - Basic support (copy and rename)
+                    if is_video or filename.lower().endswith('.mp4'):
+                        self.log(f"Processing video file: {filename} (mediaType: {'video' if is_video else 'inferred from extension'})")
+                        
+                        # Generate output filename
+                        time_str = taken_at.strftime("%Y-%m-%dT%H-%M-%S")
+                        if keep_original_filename:
+                            output_filename = f"{time_str}_{role}_{filename}"
+                        else:
+                            output_filename = f"{time_str}_{role}.mp4"
+                        
+                        # Store video file (no conversion, just rename/copy)
+                        self.processed_files[output_filename] = file_data
+                        self.processed_files_count += 1
+                        self.log(f"Processed video: {output_filename}")
                         continue
                     
                     processed_data = file_data

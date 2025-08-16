@@ -12,7 +12,7 @@ The script `process-photos.py` automates the process of converting images to JPE
 
 A complete web application that runs entirely in your browser using WebAssembly. No installation required - just upload your files and process them directly in the browser with complete privacy.
 
-**[🚀 Try the Web Version](web/index.html)** | **[📖 Web Version Documentation](web/README.md)**
+**[🚀 Try the Web Version](https://lettly.github.io/bereal-gdpr-photo-toolkit/web/index.html)** | **[📖 Web Version Documentation](https://lettly.github.io/bereal-gdpr-photo-toolkit/web/README.md)**
 
 ### 🔄 Which Version Should I Use?
 

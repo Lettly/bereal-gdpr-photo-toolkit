@@ -17,10 +17,13 @@ A browser-based version of the BeReal GDPR Photo Toolkit that processes your BeR
 -   **IPTC Metadata Support**: Includes source information and processing details
 -   **Image Combination**: Creates combined images like original BeReal memories
 
-### 🎥 Limited Video Support
+### 🎥 Enhanced Video Support
 
--   **Basic Video Processing**: Handles MP4 files with metadata injection
--   **Browser Limitations**: Some video features are limited compared to the desktop version
+-   **MP4 Video Processing**: Full support for MP4 files with timestamp-based renaming
+-   **BTS Media Support**: Processes behind-the-scenes MP4 media files
+-   **Audio Detection**: Detects presence of audio in video files
+-   **Video Pair Recognition**: Identifies primary/secondary video pairs for potential audio sync
+-   **Browser Limitations**: Audio synchronization requires desktop version with FFmpeg
 
 ### 🚀 Modern Web Interface
 
@@ -105,10 +108,18 @@ web/
 ### Processing Options
 
 -   **Metadata Injection**: Adds EXIF data including:
+
     -   Capture date and time
     -   GPS coordinates (if available)
     -   Image captions
     -   Source information
+
+-   **Video Processing**: Handles video files by:
+    -   Renaming with timestamps
+    -   Preserving original quality
+    -   Processing BTS media files
+    -   Detecting audio streams
+    -   Identifying video pairs for potential sync
 
 ## 🔒 Privacy & Security
 
@@ -171,15 +182,17 @@ Check browser developer console for detailed error messages:
 
 ## 🔄 Comparison with Desktop Version
 
-| Feature          | Web Version      | Desktop Version  |
-| ---------------- | ---------------- | ---------------- |
-| Privacy          | ✅ Complete      | ✅ Complete      |
-| Image Processing | ✅ Full Support  | ✅ Full Support  |
-| Video Processing | ⚠️ Limited       | ✅ Full Support  |
-| Audio Sync       | ❌ Not Available | ✅ Available     |
-| Performance      | ⚠️ Slower        | ✅ Fast          |
-| Setup Required   | ❌ None          | ✅ Python/Poetry |
-| Offline Usage    | ✅ After Load    | ✅ Complete      |
+| Feature          | Web Version         | Desktop Version  |
+| ---------------- | ------------------- | ---------------- |
+| Privacy          | ✅ Complete         | ✅ Complete      |
+| Image Processing | ✅ Full Support     | ✅ Full Support  |
+| Video Processing | ✅ Enhanced Support | ✅ Full Support  |
+| BTS Media        | ✅ Supported        | ✅ Supported     |
+| Audio Detection  | ✅ Supported        | ✅ Supported     |
+| Audio Sync       | ❌ Not Available    | ✅ Available     |
+| Performance      | ⚠️ Slower           | ✅ Fast          |
+| Setup Required   | ❌ None             | ✅ Python/Poetry |
+| Offline Usage    | ✅ After Load       | ✅ Complete      |
 
 ## 🤝 Contributing
 

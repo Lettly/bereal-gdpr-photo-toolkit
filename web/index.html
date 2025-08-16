@@ -114,6 +114,28 @@
                         >
                     </div>
                 </div>
+                <div
+                    class="video-info-box"
+                    style="
+                        background-color: #f0f8ff;
+                        border: 1px solid #b6d7ff;
+                        padding: 12px;
+                        border-radius: 8px;
+                        margin: 15px 0;
+                    "
+                >
+                    <h4 style="margin: 0 0 8px 0; color: #0066cc">
+                        🎥 Video Processing
+                    </h4>
+                    <p style="margin: 0; font-size: 0.9em; color: #333">
+                        MP4 videos and BTS media are now supported! Videos will
+                        be renamed with timestamps and preserved with their
+                        original quality.
+                        <strong>Note:</strong> Audio synchronization between
+                        primary/secondary videos requires the desktop Python
+                        version with FFmpeg.
+                    </p>
+                </div>
                 <button
                     class="process-btn"
                     id="processBtn"
@@ -199,8 +221,11 @@
                     <div class="feature">
                         <h3>🎥 Video Processing</h3>
                         <p>
-                            Processes MP4 videos with metadata injection
-                            (limited functionality in browser)
+                            Processes MP4 videos including BTS media. Videos are
+                            renamed with timestamps and basic metadata is
+                            preserved. For audio synchronization between
+                            primary/secondary videos, use the desktop Python
+                            version.
                         </p>
                     </div>
                     <div class="feature">
