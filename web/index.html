@@ -43,6 +43,40 @@
             </div>
 
             <div
+                class="upload-progress-section"
+                id="uploadProgressSection"
+                style="display: none"
+            >
+                <h2>Upload Progress</h2>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="uploadProgressFill"></div>
+                </div>
+                <div class="progress-text" id="uploadProgressText">
+                    Reading files...
+                </div>
+            </div>
+
+            <div
+                class="decompression-progress-section"
+                id="decompressionProgressSection"
+                style="display: none"
+            >
+                <h2>ZIP Decompression Progress</h2>
+                <div class="progress-bar">
+                    <div
+                        class="progress-fill"
+                        id="decompressionProgressFill"
+                    ></div>
+                </div>
+                <div class="progress-text" id="decompressionProgressText">
+                    Extracting files...
+                </div>
+                <div class="progress-details" id="decompressionProgressDetails">
+                    <small>Preparing to extract...</small>
+                </div>
+            </div>
+
+            <div
                 class="settings-section"
                 id="settingsSection"
                 style="display: none"

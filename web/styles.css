@@ -40,6 +40,8 @@ header p {
 
 /* Card Styles */
 .upload-section,
+.upload-progress-section,
+.decompression-progress-section,
 .settings-section,
 .progress-section,
 .results-section,
@@ -213,6 +215,13 @@ header p {
     font-weight: 600;
     margin-bottom: 20px;
     color: #333;
+}
+
+.progress-details {
+    text-align: center;
+    margin-top: 8px;
+    color: #888;
+    font-size: 0.9em;
 }
 
 .memory-indicator {

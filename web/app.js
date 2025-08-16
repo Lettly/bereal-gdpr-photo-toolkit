@@ -106,6 +106,9 @@ class BeRealProcessor {
     async processUploadedFiles(files) {
         this.log('Files selected: ' + files.map(f => f.name).join(', '));
 
+        // Show upload progress section
+        document.getElementById('uploadProgressSection').style.display = 'block';
+
         // Check total file size first
         const totalSize = files.reduce((sum, file) => sum + file.size, 0);
         const totalSizeMB = totalSize / 1024 / 1024;
@@ -114,6 +117,9 @@ class BeRealProcessor {
         if (totalSizeMB > this.maxZipSize * 2) {
             this.log(`⚠️ Very large upload (${totalSizeMB.toFixed(1)}MB). This may cause memory issues. Consider using the desktop version for files larger than ${this.maxZipSize}MB.`, 'warning');
         }
+
+        // Read files with progress
+        await this.readFilesWithProgress(files);
 
         // Filter for ZIP files and other relevant files
         const zipFiles = files.filter(f => f.name.toLowerCase().endsWith('.zip'));
@@ -164,10 +170,64 @@ class BeRealProcessor {
         }
     }
 
+    async readFilesWithProgress(files) {
+        let loaded = 0;
+        const total = files.reduce((sum, file) => sum + file.size, 0);
+        const uploadProgressFill = document.getElementById('uploadProgressFill');
+        const uploadProgressText = document.getElementById('uploadProgressText');
+
+        const updateUploadProgress = () => {
+            const percentage = total > 0 ? Math.round((loaded / total) * 100) : 100;
+            if (uploadProgressFill) uploadProgressFill.style.width = `${percentage}%`;
+            if (uploadProgressText) uploadProgressText.textContent = `Reading files... ${percentage}%`;
+        };
+
+        // Initial progress update
+        updateUploadProgress();
+
+        const readFile = (file) => {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    loaded += file.size;
+                    updateUploadProgress();
+                    resolve();
+                };
+                reader.onerror = reject;
+                reader.onprogress = (event) => {
+                    if (event.lengthComputable) {
+                        // Update progress for current file being read
+                        const currentFileProgress = event.loaded;
+                        const tempLoaded = loaded + currentFileProgress;
+                        const percentage = total > 0 ? Math.round((tempLoaded / total) * 100) : 100;
+                        if (uploadProgressFill) uploadProgressFill.style.width = `${percentage}%`;
+                        if (uploadProgressText) uploadProgressText.textContent = `Reading ${file.name}... ${percentage}%`;
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            });
+        };
+
+        for (const file of files) {
+            await readFile(file);
+        }
+
+        if (uploadProgressText) uploadProgressText.textContent = 'File reading complete!';
+
+        // Hide upload progress after a short delay
+        setTimeout(() => {
+            document.getElementById('uploadProgressSection').style.display = 'none';
+        }, 1000);
+    }
+
     async extractZipFile(zipFile) {
         try {
             const zipSizeMB = zipFile.size / 1024 / 1024;
             this.log(`Extracting ZIP file: ${zipFile.name} (${zipSizeMB.toFixed(1)}MB)`);
+
+            // Show decompression progress section
+            document.getElementById('decompressionProgressSection').style.display = 'block';
+            this.updateDecompressionProgress(0, 'Initializing ZIP extraction...', 'Preparing to load ZIP file...');
 
             // Show progress for ZIP extraction
             this.updateProgress(5, 'Loading ZIP file...');
@@ -178,13 +238,20 @@ class BeRealProcessor {
 
             // Load ZIP with progress tracking
             this.updateProgress(10, 'Reading ZIP contents...');
+            this.updateDecompressionProgress(10, 'Loading ZIP file...', `Reading ${zipFile.name}`);
+            this.log(`📦 Loading ZIP file: ${zipFile.name}`);
+
             const zipContent = await zip.loadAsync(zipFile, {
                 createFolders: false // Don't create folder entries to save memory
             });
 
+            this.updateDecompressionProgress(20, 'ZIP file loaded', 'Analyzing file structure...');
+            this.log(`📂 ZIP file loaded successfully`);
+
             // Count files first for progress tracking
             const fileEntries = Object.entries(zipContent.files).filter(([, file]) => !file.dir);
             const totalFiles = fileEntries.length;
+            this.updateDecompressionProgress(25, 'File analysis complete', `Found ${totalFiles} files to extract`);
             this.log(`Found ${totalFiles} files in ZIP`);
 
             if (totalFiles > 1000) {
@@ -198,7 +265,17 @@ class BeRealProcessor {
             for (let i = 0; i < fileEntries.length; i += batchSize) {
                 const batch = fileEntries.slice(i, i + batchSize);
                 const progress = 10 + (i / totalFiles) * 30; // 10-40% for extraction
-                this.updateProgress(progress, `Extracting files... (${i + 1}-${Math.min(i + batchSize, totalFiles)} of ${totalFiles})`);
+                const decompressionProgress = 25 + (i / totalFiles) * 70; // 25-95% for decompression
+                const currentBatch = Math.floor(i / batchSize) + 1;
+                const totalBatches = Math.ceil(totalFiles / batchSize);
+
+                this.updateProgress(progress, `Decompressing batch ${currentBatch}/${totalBatches} (${i + 1}-${Math.min(i + batchSize, totalFiles)} of ${totalFiles} files)`);
+                this.updateDecompressionProgress(
+                    decompressionProgress,
+                    `Extracting batch ${currentBatch}/${totalBatches}`,
+                    `Processing files ${i + 1}-${Math.min(i + batchSize, totalFiles)} of ${totalFiles}`
+                );
+                this.log(`🗂️ Processing batch ${currentBatch}/${totalBatches}: ${batch.length} files`);
 
                 // Process batch with error handling
                 await Promise.all(batch.map(async ([filename, file]) => {
@@ -247,10 +324,13 @@ class BeRealProcessor {
                 // Memory management between batches
                 this.forceGarbageCollection();
 
+                // Show progress every batch
+                this.log(`✅ Batch ${currentBatch}/${totalBatches} complete: ${extractedCount}/${totalFiles} files extracted`);
+
                 // Show memory usage every 100 files
                 if (extractedCount % 100 === 0 && performance.memory) {
                     const memUsed = performance.memory.usedJSHeapSize / 1024 / 1024;
-                    this.log(`Extracted ${extractedCount} files, memory usage: ${memUsed.toFixed(1)}MB`);
+                    this.log(`📊 Memory usage: ${memUsed.toFixed(1)}MB (${extractedCount} files extracted)`);
                 }
 
                 // Small delay to prevent UI blocking
@@ -258,6 +338,7 @@ class BeRealProcessor {
             }
 
             this.updateProgress(40, 'ZIP extraction complete');
+            this.updateDecompressionProgress(100, 'Extraction complete!', `Successfully extracted ${extractedCount} files`);
             this.log(`✅ Extracted ${extractedCount} files from ${zipFile.name}`);
 
             // Final memory usage info
@@ -266,9 +347,21 @@ class BeRealProcessor {
                 this.log(`Memory usage after extraction: ${memUsed.toFixed(1)}MB`);
             }
 
+            // Hide decompression progress after a short delay
+            setTimeout(() => {
+                document.getElementById('decompressionProgressSection').style.display = 'none';
+            }, 2000);
+
         } catch (error) {
+            this.updateDecompressionProgress(0, 'Extraction failed', `Error: ${error.message}`);
             this.log(`❌ Error extracting ZIP file: ${error.message}`, 'error');
             console.error('ZIP extraction error:', error);
+
+            // Hide decompression progress after error
+            setTimeout(() => {
+                document.getElementById('decompressionProgressSection').style.display = 'none';
+            }, 3000);
+
             throw error;
         }
     }
@@ -616,12 +709,23 @@ class BeRealProcessorWeb:
                     for file_key, filename, role in [(primary_key, primary_filename, "primary"), (secondary_key, secondary_filename, "secondary")]:
                         file_data = files_data[file_key]
                         
-                        # Skip if it's a video (limited support in browser)
+                        # Handle Videos - No processing, just pass through and rename
                         if filename.lower().endswith('.mp4'):
-                            self.log(f"Skipping video file: {filename} (limited browser support)")
-                            self.skipped_files_count += 1
+                            self.log(f"Handling video file: {filename}")
+                            
+                            # Generate output filename
+                            taken_at = datetime.strptime(entry["takenAt"], "%Y-%m-%dT%H:%M:%S.%fZ")
+                            time_str = taken_at.strftime("%Y-%m-%dT%H-%M-%S")
+                            if keep_original_filename:
+                                output_filename = f"{time_str}_{role}_{filename}"
+                            else:
+                                output_filename = f"{time_str}_{role}.mp4"
+                            
+                            self.processed_files[output_filename] = file_data
+                            self.processed_files_count += 1
+                            self.log(f"Processed video: {output_filename}")
                             continue
-                        
+
                         processed_data = file_data
                         converted = False
                         
@@ -805,6 +909,24 @@ processor = BeRealProcessorWeb()
             } else if (memUsed > memLimit * 0.6) {
                 memoryIndicator.classList.add('warning');
             }
+        }
+    }
+
+    updateDecompressionProgress(percentage, message, details) {
+        const progressFill = document.getElementById('decompressionProgressFill');
+        const progressText = document.getElementById('decompressionProgressText');
+        const progressDetails = document.getElementById('decompressionProgressDetails');
+
+        if (progressFill) {
+            progressFill.style.width = `${percentage}%`;
+        }
+
+        if (progressText) {
+            progressText.textContent = message;
+        }
+
+        if (progressDetails && details) {
+            progressDetails.innerHTML = `<small>${details}</small>`;
         }
     }
 
