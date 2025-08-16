@@ -315,11 +315,12 @@ def has_audio_stream(video_path):
 
 
 def copy_audio_between_videos(source_video, target_video):
-    """Copy audio from source video to target video if target has no audio"""
+    """Copy audio from source video to target video preserving original audio quality"""
     try:
         # Create temporary file for the result
         temp_file = target_video.parent / (target_video.stem + "_with_audio.mp4")
 
+        # First, try to copy audio without re-encoding to preserve quality
         command = [
             "ffmpeg",
             "-i",
@@ -329,19 +330,23 @@ def copy_audio_between_videos(source_video, target_video):
             "-c:v",
             "copy",  # Copy video stream as-is
             "-c:a",
-            "aac",  # Encode audio to AAC
+            "copy",  # Copy audio stream as-is (no re-encoding)
             "-map",
             "0:v:0",  # Map video from first input
             "-map",
             "1:a:0",  # Map audio from second input
+            "-map_metadata",
+            "0",  # Copy metadata from first input (target video)
             "-shortest",  # End when shortest stream ends
+            "-avoid_negative_ts",
+            "make_zero",  # Handle timestamp issues
             "-y",  # Overwrite output file
             str(temp_file),
         ]
 
-        subprocess.run(command, check=True, capture_output=True)
+        result = subprocess.run(command, check=True, capture_output=True)
         logging.info(
-            f"Successfully copied audio from {source_video.name} to {target_video.name}"
+            f"Successfully copied audio from {source_video.name} to {target_video.name} without re-encoding"
         )
 
         # Replace the original file with the new one
@@ -349,15 +354,61 @@ def copy_audio_between_videos(source_video, target_video):
         return True
 
     except subprocess.CalledProcessError as e:
-        logging.error(
-            f"Failed to copy audio from {source_video} to {target_video}: {e}"
+        # If direct copy fails, fall back to re-encoding with high quality settings
+        logging.warning(
+            f"Direct audio copy failed, falling back to high-quality re-encoding: {e}"
         )
+        try:
+            command_fallback = [
+                "ffmpeg",
+                "-i",
+                str(target_video),  # Video input (no audio)
+                "-i",
+                str(source_video),  # Audio source
+                "-c:v",
+                "copy",  # Copy video stream as-is
+                "-c:a",
+                "aac",  # High quality AAC encoding
+                "-b:a",
+                "256k",  # Higher bitrate for better quality
+                "-ar",
+                "48000",  # Higher sample rate
+                "-map",
+                "0:v:0",  # Map video from first input
+                "-map",
+                "1:a:0",  # Map audio from second input
+                "-map_metadata",
+                "0",  # Copy metadata from first input (target video)
+                "-shortest",  # End when shortest stream ends
+                "-avoid_negative_ts",
+                "make_zero",  # Handle timestamp issues
+                "-y",  # Overwrite output file
+                str(temp_file),
+            ]
+
+            subprocess.run(command_fallback, check=True, capture_output=True)
+            logging.info(
+                f"Successfully copied audio from {source_video.name} to {target_video.name} with high-quality re-encoding"
+            )
+
+            # Replace the original file with the new one
+            os.replace(temp_file, target_video)
+            return True
+
+        except subprocess.CalledProcessError as e2:
+            logging.error(
+                f"Both direct copy and re-encoding failed for {source_video} to {target_video}: {e2}"
+            )
+            # Clean up temp file if it exists
+            if temp_file.exists():
+                temp_file.unlink()
+            return False
+
+    except Exception as e:
+        logging.error(f"Unexpected error copying audio: {e}")
         # Clean up temp file if it exists
         if temp_file.exists():
             temp_file.unlink()
-        return False
-    except Exception as e:
-        logging.error(f"Unexpected error copying audio: {e}")
         return False
 
 
@@ -375,12 +426,22 @@ def update_mp4_metadata(video_path, datetime_original, location=None, caption=No
         ]
 
         if location and "latitude" in location and "longitude" in location:
+            lat = location["latitude"]
+            lng = location["longitude"]
+
+            # Add GPS metadata in multiple formats for better compatibility
             command.extend(
                 [
                     "-metadata",
-                    f"location={location['latitude']},{location['longitude']}",
+                    f"location={lat:+.6f}{lng:+.6f}/",  # ISO 6709 format
+                    "-metadata",
+                    f"com.apple.quicktime.location.ISO6709={lat:+.6f}{lng:+.6f}/",  # Apple format
+                    "-metadata",
+                    f"location-eng={lat},{lng}",  # Alternative format
                 ]
             )
+
+            logging.info(f"Adding GPS coordinates: {lat}, {lng}")
 
         if caption:
             command.extend(["-metadata", f"title={caption}"])
@@ -392,7 +453,7 @@ def update_mp4_metadata(video_path, datetime_original, location=None, caption=No
         command.append(new_path)
 
         # Run the command to update the metadata
-        subprocess.run(command, check=True)
+        subprocess.run(command, check=True, capture_output=True)
         logging.info(f"Updated metadata for {video_path}.")
 
         # Replace the original file with the new file
@@ -563,6 +624,12 @@ for entry in data:
             (primary_path, "primary", primary_is_video),
             (secondary_path, "secondary", secondary_is_video),
         ]:
+            # Check if the file exists before processing
+            if not path.exists():
+                logging.warning(f"File not found: {path}. Skipping {role} media.")
+                skipped_files_count += 1
+                continue
+
             if is_video:
                 logging.info(f"Found video: {path}")
                 # Handle video files
@@ -646,17 +713,23 @@ for entry in data:
                     new_path
                 )  # Ensure the filename is unique
 
-                if convert_to_jpeg == "yes" and converted:
-                    converted_path.rename(new_path)  # Move and rename the file
+                if convert_to_jpeg == "yes":
+                    if converted:
+                        # File was converted, move the converted file
+                        converted_path.rename(new_path)
+                    else:
+                        # File was already in correct format or conversion not needed, copy original
+                        shutil.copy2(path, new_path)
 
-                    # Update EXIF and IPTC data
+                    # Update EXIF and IPTC data for JPEG files
                     update_exif(new_path, taken_at, location, caption)
                     logging.info(f"EXIF data added to converted image.")
 
                     image_path_str = str(new_path)
                     update_iptc(image_path_str, caption)
                 else:
-                    shutil.copy2(path, new_path)  # Copy to new path
+                    # No conversion requested, just copy the file
+                    shutil.copy2(path, new_path)
 
                 if role == "primary":
                     primary_images.append(
@@ -708,26 +781,31 @@ for entry in data:
 
         # Handle BTS Media (MP4)
         if "btsMedia" in entry:
-            # Adjust filename based on user's choice
-            time_str = taken_at.strftime("%Y-%m-%dT%H-%M-%S")
-            original_filename_with_extension = Path(bts_path).name
-            original_file_extension = Path(bts_path).suffix
-
-            if keep_original_filename == "yes":
-                new_filename = f"{time_str}_bts_{original_filename_with_extension}"
+            # Check if BTS media file exists
+            if not bts_path.exists():
+                logging.warning(f"BTS media file not found: {bts_path}. Skipping.")
+                skipped_files_count += 1
             else:
-                new_filename = f"{time_str}_bts{original_file_extension}"
+                # Adjust filename based on user's choice
+                time_str = taken_at.strftime("%Y-%m-%dT%H-%M-%S")
+                original_filename_with_extension = Path(bts_path).name
+                original_file_extension = Path(bts_path).suffix
 
-            new_path = output_folder / new_filename
-            new_path = get_unique_filename(new_path)
+                if keep_original_filename == "yes":
+                    new_filename = f"{time_str}_bts_{original_filename_with_extension}"
+                else:
+                    new_filename = f"{time_str}_bts{original_file_extension}"
 
-            shutil.copy2(bts_path, new_path)  # Copy to new path
+                new_path = output_folder / new_filename
+                new_path = get_unique_filename(new_path)
 
-            update_mp4_metadata(new_path, taken_at, location, caption)
-            logging.info(f"Metadata added to BTS Media.")
+                shutil.copy2(bts_path, new_path)  # Copy to new path
 
-            processed_files_count += 1
-            logging.info(f"Sucessfully processed BTS Media.")
+                update_mp4_metadata(new_path, taken_at, location, caption)
+                logging.info(f"Metadata added to BTS Media.")
+
+                processed_files_count += 1
+                logging.info(f"Successfully processed BTS Media.")
 
     except Exception as e:
         logging.error(f"Error processing entry {entry}: {e}")
