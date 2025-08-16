@@ -86,16 +86,19 @@ print("")
 # Function to count number of input files
 def count_files_in_folder(folder_path):
     folder = Path(folder_path)
-    file_count = len(list(folder.glob("*.webp")))
-    return file_count
+    webp_count = len(list(folder.glob("*.webp")))
+    mp4_count = len(list(folder.glob("*.mp4")))
+    return webp_count + mp4_count
 
 
 number_of_files = count_files_in_folder(photo_folder)
-print(f"Number of WebP-files in {photo_folder}: {number_of_files}")
+print(f"Number of media files (WebP/MP4) in {photo_folder}: {number_of_files}")
 
 if os.path.exists(bereal_folder):
     number_of_files = count_files_in_folder(bereal_folder)
-    print(f"Number of (older) WebP-files in {bereal_folder}: {number_of_files}")
+    print(
+        f"Number of (older) media files (WebP/MP4) in {bereal_folder}: {number_of_files}"
+    )
 
 # Settings
 ## Initial choice for accessing advanced settings
@@ -462,6 +465,10 @@ for entry in data:
         primary_filename = Path(entry["primary"]["path"]).name
         secondary_filename = Path(entry["secondary"]["path"]).name
 
+        # Check if primary/secondary are videos
+        primary_is_video = entry["primary"].get("mediaType") == "video"
+        secondary_is_video = entry["secondary"].get("mediaType") == "video"
+
         if "btsMedia" in entry:
             bts_filename = Path(entry["btsMedia"]["path"]).name
             bts_path = photo_folder / bts_filename
@@ -479,35 +486,18 @@ for entry in data:
         )  # This will be None if 'location' is not present
         caption = entry.get("caption")  # This will be None if 'caption' is not present
 
-        for path, role in [(primary_path, "primary"), (secondary_path, "secondary")]:
-            logging.info(f"Found image: {path}")
-            # Check if conversion to JPEG is enabled by the user
-            if convert_to_jpeg == "yes":
-                # Convert WebP to JPEG if necessary
-                converted_path, converted = convert_webp_to_jpg(path)
-                if converted_path is None:
-                    skipped_files_count += 1
-                    continue  # Skip this file if conversion failed
-                if converted:
-                    converted_files_count += 1
+        # Process primary and secondary media (images or videos)
+        for path, role, is_video in [
+            (primary_path, "primary", primary_is_video),
+            (secondary_path, "secondary", secondary_is_video),
+        ]:
+            if is_video:
+                logging.info(f"Found video: {path}")
+                # Handle video files
+                time_str = taken_at.strftime("%Y-%m-%dT%H-%M-%S")
+                original_filename_with_extension = Path(path).name
+                original_file_extension = Path(path).suffix
 
-            # Adjust filename based on user's choice
-            time_str = taken_at.strftime(
-                "%Y-%m-%dT%H-%M-%S"
-            )  # ISO standard format with '-' instead of ':' for time
-            original_filename_without_extension = Path(
-                path
-            ).stem  # Extract original filename without extension
-
-            original_filename_with_extension = Path(path).name
-            original_file_extension = Path(path).suffix
-
-            if convert_to_jpeg == "yes":
-                if keep_original_filename == "yes":
-                    new_filename = f"{time_str}_{role}_{converted_path.name}"
-                else:
-                    new_filename = f"{time_str}_{role}.jpg"
-            else:
                 if keep_original_filename == "yes":
                     new_filename = (
                         f"{time_str}_{role}_{original_filename_with_extension}"
@@ -515,36 +505,100 @@ for entry in data:
                 else:
                     new_filename = f"{time_str}_{role}{original_file_extension}"
 
-            new_path = output_folder / new_filename
-            new_path = get_unique_filename(new_path)  # Ensure the filename is unique
+                new_path = output_folder / new_filename
+                new_path = get_unique_filename(new_path)
 
-            if convert_to_jpeg == "yes" and converted:
-                converted_path.rename(new_path)  # Move and rename the file
+                shutil.copy2(path, new_path)  # Copy video to new path
 
-                # Update EXIF and IPTC data
-                update_exif(new_path, taken_at, location, caption)
-                logging.info(f"EXIF data added to converted image.")
+                # Update video metadata
+                update_mp4_metadata(new_path, taken_at, location, caption)
+                logging.info(f"Metadata added to {role} video.")
 
-                image_path_str = str(new_path)
-                update_iptc(image_path_str, caption)
+                if role == "primary":
+                    primary_images.append(
+                        {
+                            "path": new_path,
+                            "taken_at": taken_at,
+                            "location": location,
+                            "caption": caption,
+                            "is_video": True,
+                        }
+                    )
+                else:
+                    secondary_images.append(new_path)
+
+                logging.info(f"Successfully processed {role} video.")
+                processed_files_count += 1
+                print("")
             else:
-                shutil.copy2(path, new_path)  # Copy to new path
+                logging.info(f"Found image: {path}")
+                # Check if conversion to JPEG is enabled by the user
+                if convert_to_jpeg == "yes":
+                    # Convert WebP to JPEG if necessary
+                    converted_path, converted = convert_webp_to_jpg(path)
+                    if converted_path is None:
+                        skipped_files_count += 1
+                        continue  # Skip this file if conversion failed
+                    if converted:
+                        converted_files_count += 1
 
-            if role == "primary":
-                primary_images.append(
-                    {
-                        "path": new_path,
-                        "taken_at": taken_at,
-                        "location": location,
-                        "caption": caption,
-                    }
-                )
-            else:
-                secondary_images.append(new_path)
+                # Adjust filename based on user's choice
+                time_str = taken_at.strftime(
+                    "%Y-%m-%dT%H-%M-%S"
+                )  # ISO standard format with '-' instead of ':' for time
+                original_filename_without_extension = Path(
+                    path
+                ).stem  # Extract original filename without extension
 
-            logging.info(f"Sucessfully processed {role} image.")
-            processed_files_count += 1
-            print("")
+                original_filename_with_extension = Path(path).name
+                original_file_extension = Path(path).suffix
+
+                if convert_to_jpeg == "yes":
+                    if keep_original_filename == "yes":
+                        new_filename = f"{time_str}_{role}_{converted_path.name}"
+                    else:
+                        new_filename = f"{time_str}_{role}.jpg"
+                else:
+                    if keep_original_filename == "yes":
+                        new_filename = (
+                            f"{time_str}_{role}_{original_filename_with_extension}"
+                        )
+                    else:
+                        new_filename = f"{time_str}_{role}{original_file_extension}"
+
+                new_path = output_folder / new_filename
+                new_path = get_unique_filename(
+                    new_path
+                )  # Ensure the filename is unique
+
+                if convert_to_jpeg == "yes" and converted:
+                    converted_path.rename(new_path)  # Move and rename the file
+
+                    # Update EXIF and IPTC data
+                    update_exif(new_path, taken_at, location, caption)
+                    logging.info(f"EXIF data added to converted image.")
+
+                    image_path_str = str(new_path)
+                    update_iptc(image_path_str, caption)
+                else:
+                    shutil.copy2(path, new_path)  # Copy to new path
+
+                if role == "primary":
+                    primary_images.append(
+                        {
+                            "path": new_path,
+                            "taken_at": taken_at,
+                            "location": location,
+                            "caption": caption,
+                            "is_video": False,
+                        }
+                    )
+                else:
+                    secondary_images.append(new_path)
+
+                logging.info(f"Successfully processed {role} image.")
+                processed_files_count += 1
+                print("")
 
         # Handle BTS Media (MP4)
         if "btsMedia" in entry:
@@ -577,13 +631,20 @@ if create_combined_images == "yes":
     # Create output folder if it doesn't exist
     output_folder_combined.mkdir(parents=True, exist_ok=True)
 
-    for primary_path, secondary_path in zip(primary_images, secondary_images):
+    for primary_data, secondary_path in zip(primary_images, secondary_images):
         # Extract metadata from one of the images for consistency
-        # taken_at = datetime.strptime(timestamp, "%Y-%m-%dT%H-%M-%S")
-        primary_new_path = primary_path["path"]
-        primary_taken_at = primary_path["taken_at"]
-        primary_location = primary_path["location"]
-        primary_caption = primary_path["caption"]
+        primary_new_path = primary_data["path"]
+        primary_taken_at = primary_data["taken_at"]
+        primary_location = primary_data["location"]
+        primary_caption = primary_data["caption"]
+        primary_is_video = primary_data.get("is_video", False)
+
+        # Skip combined image creation if either primary or secondary is a video
+        if primary_is_video or str(secondary_path).endswith(".mp4"):
+            logging.info(
+                f"Skipping combined image creation for {primary_new_path.stem} - contains video content"
+            )
+            continue
 
         timestamp = primary_new_path.stem.split("_")[0]
 
