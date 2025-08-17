@@ -190,7 +190,7 @@ For MP4 videos, the following metadata is added:
 
 -   **Creation timestamp** - When the video was recorded
 -   **GPS coordinates** - Location data in multiple formats:
-    -   ISO 6709 format (`+41.3304+013.0162/`)
+    -   ISO 6709 format (`+44.3304+113.0162/`)
     -   Apple QuickTime format (`com.apple.quicktime.location.ISO6709`)
     -   Alternative format (`location-eng`)
 -   **Caption** - Video title/description
