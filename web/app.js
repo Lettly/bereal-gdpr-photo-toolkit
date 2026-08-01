@@ -1,7 +1,7 @@
 // Main orchestrator for the BeReal GDPR Photo Toolkit web app.
 // Mirrors the processing flow of process-photos.py, entirely client-side.
 
-import { convertWebpToJpeg, updateExif, combineImages } from "./images.js";
+import { convertWebpToJpeg, updateExif, updateIptc, combineImages } from "./images.js";
 import {
     loadFfmpeg,
     updateMp4Metadata,
@@ -331,20 +331,20 @@ async function processExport(zipFile, opts) {
                     let outName;
 
                     if (opts.convertJpeg) {
-                        // Always re-encode through canvas to produce a clean baseline
-                        // JPEG. This handles WebP sources and normalizes existing JPEGs
-                        // so EXIF insertion via piexifjs always succeeds.
                         const isJpeg = [".jpg", ".jpeg"].includes(ext(origName).toLowerCase());
                         try {
-                            const res = await convertWebpToJpeg(blob);
-                            blob = res.blob;
-                            if (!isJpeg) counters.converted++;
+                            if (!isJpeg) {
+                                const res = await convertWebpToJpeg(blob);
+                                blob = res.blob;
+                                counters.converted++;
+                            }
 
                             outName = opts.keepFilename
-                                ? `${ts}_${role}_${stem(origName)}.jpg`
+                                ? `${ts}_${role}_${isJpeg ? origName : `${stem(origName)}.jpg`}`
                                 : `${ts}_${role}.jpg`;
 
                             blob = await updateExif(blob, takenAt, location, caption);
+                            blob = await updateIptc(blob, caption);
                             log(`EXIF/IPTC metadata added to ${role} image.`, "ok");
                         } catch (convErr) {
                             // Decoding/encoding failed (e.g. corrupt frame or memory
@@ -439,12 +439,13 @@ async function processExport(zipFile, opts) {
             }
             try {
                 const combined = await combineImages(primary.blob, secondary.blob);
-                const withMeta = await updateExif(
+                let withMeta = await updateExif(
                     combined,
                     primary.takenAt,
                     primary.location,
                     primary.caption
                 );
+                withMeta = await updateIptc(withMeta, primary.caption);
                 const name = uniqueName(`${timeStr(primary.takenAt)}_combined.jpg`, usedCombinedNames);
                 combinedFolder.file(name, withMeta);
                 counters.combined++;

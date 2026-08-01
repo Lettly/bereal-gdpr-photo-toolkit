@@ -64,7 +64,7 @@ export async function convertWebpToJpeg(blob) {
 function toDegrees(value) {
     const d = Math.floor(value);
     const m = Math.floor((value - d) * 60);
-    const s = Math.round((value - d - m / 60) * 3600 * 100);
+    const s = Math.trunc((value - d - m / 60) * 3600 * 100);
     return [
         [d, 1],
         [m, 1],
@@ -140,9 +140,6 @@ export async function updateExif(jpegBlob, takenAt, location, caption) {
             // Latin1-safe binary string that survives btoa.
             exifObj["0th"][piexif.ImageIFD.ImageDescription] = utf8ToLatin1Binary(caption);
         }
-        // Always tag source software.
-        exifObj["0th"][piexif.ImageIFD.Software] = PROCESSING_TOOL;
-        exifObj["0th"][piexif.ImageIFD.Make] = SOURCE_APP;
 
         const exifBytes = piexif.dump(exifObj);
         const newDataURL = piexif.insert(exifBytes, dataURL);
@@ -152,6 +149,118 @@ export async function updateExif(jpegBlob, takenAt, location, caption) {
         console.warn("EXIF insertion failed; saving image without metadata:", err.message);
         return jpegBlob;
     }
+}
+
+function iptcRecord(dataset, value) {
+    const bytes = new TextEncoder().encode(value);
+    const record = new Uint8Array(5 + bytes.length);
+    record[0] = 0x1c;
+    record[1] = 2;
+    record[2] = dataset;
+    record[3] = (bytes.length >> 8) & 0xff;
+    record[4] = bytes.length & 0xff;
+    record.set(bytes, 5);
+    return record;
+}
+
+function concatBytes(parts) {
+    const total = parts.reduce((sum, part) => sum + part.length, 0);
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const part of parts) {
+        out.set(part, offset);
+        offset += part.length;
+    }
+    return out;
+}
+
+function u16(value) {
+    return new Uint8Array([(value >> 8) & 0xff, value & 0xff]);
+}
+
+function u32(value) {
+    return new Uint8Array([
+        (value >> 24) & 0xff,
+        (value >> 16) & 0xff,
+        (value >> 8) & 0xff,
+        value & 0xff,
+    ]);
+}
+
+function bytesFromString(value) {
+    const out = new Uint8Array(value.length);
+    for (let i = 0; i < value.length; i++) out[i] = value.charCodeAt(i);
+    return out;
+}
+
+function photoshopResourceBlock(resourceId, data) {
+    const name = new Uint8Array([0]);
+    const namePadding = name.length % 2 === 0 ? new Uint8Array(0) : new Uint8Array([0]);
+    const dataPadding = data.length % 2 === 0 ? new Uint8Array(0) : new Uint8Array([0]);
+    return concatBytes([
+        bytesFromString("8BIM"),
+        u16(resourceId),
+        name,
+        namePadding,
+        u32(data.length),
+        data,
+        dataPadding,
+    ]);
+}
+
+function buildIptcSegment(caption) {
+    const records = [];
+    records.push(iptcRecord(65, PROCESSING_TOOL)); // Originating Program
+    records.push(iptcRecord(115, SOURCE_APP)); // Source
+    if (caption) records.push(iptcRecord(120, caption)); // Caption-Abstract
+
+    const resource = photoshopResourceBlock(0x0404, concatBytes(records));
+    const payload = concatBytes([bytesFromString("Photoshop 3.0\0"), resource]);
+    return concatBytes([new Uint8Array([0xff, 0xed]), u16(payload.length + 2), payload]);
+}
+
+function stripApp13Segments(bytes) {
+    if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return bytes;
+    const parts = [bytes.slice(0, 2)];
+    let i = 2;
+    while (i + 4 <= bytes.length && bytes[i] === 0xff) {
+        let markerOffset = i;
+        while (i < bytes.length && bytes[i] === 0xff) i++;
+        const marker = bytes[i++];
+        if (marker === 0xda || marker === 0xd9) {
+            parts.push(bytes.slice(markerOffset));
+            return concatBytes(parts);
+        }
+        const len = (bytes[i] << 8) | bytes[i + 1];
+        const end = i + len;
+        if (marker !== 0xed) parts.push(bytes.slice(markerOffset, end));
+        i = end;
+    }
+    parts.push(bytes.slice(i));
+    return concatBytes(parts);
+}
+
+function insertBeforeSos(bytes, segment) {
+    let i = 2;
+    while (i + 4 <= bytes.length && bytes[i] === 0xff) {
+        const markerOffset = i;
+        while (i < bytes.length && bytes[i] === 0xff) i++;
+        const marker = bytes[i++];
+        if (marker === 0xda) {
+            return concatBytes([bytes.slice(0, markerOffset), segment, bytes.slice(markerOffset)]);
+        }
+        if (marker === 0xd9) break;
+        const len = (bytes[i] << 8) | bytes[i + 1];
+        i += len;
+    }
+    return bytes;
+}
+
+export async function updateIptc(jpegBlob, caption) {
+    const bytes = new Uint8Array(await jpegBlob.arrayBuffer());
+    const withoutApp13 = stripApp13Segments(bytes);
+    const withIptc = insertBeforeSos(withoutApp13, buildIptcSegment(caption));
+    return new Blob([withIptc], { type: "image/jpeg" });
 }
 
 /**
