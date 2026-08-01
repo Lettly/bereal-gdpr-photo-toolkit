@@ -9,6 +9,13 @@ const FFMPEG_DIR = new URL("./vendor/ffmpeg/", import.meta.url).href;
 let ffmpeg = null;
 let loadingPromise = null;
 let fetchFile = null;
+let onLogCb = null;
+
+// The single-threaded ffmpeg core has a bounded wasm heap. Over many operations
+// its heap/MEMFS fragments and eventually throws "memory access out of bounds".
+// We recycle the instance after a number of operations to reset the heap.
+let opsSinceLoad = 0;
+const OPS_BEFORE_RECYCLE = 10;
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -20,6 +27,18 @@ function loadScript(src) {
     });
 }
 
+async function createInstance() {
+    const { FFmpeg } = window.FFmpegWASM;
+    const instance = new FFmpeg();
+    if (onLogCb) instance.on("log", ({ message }) => onLogCb(message));
+    await instance.load({
+        coreURL: `${FFMPEG_DIR}ffmpeg-core.js`,
+        wasmURL: `${FFMPEG_DIR}ffmpeg-core.wasm`,
+    });
+    opsSinceLoad = 0;
+    return instance;
+}
+
 /**
  * Lazily load the vendored @ffmpeg/ffmpeg (single-threaded core).
  */
@@ -27,27 +46,53 @@ export async function loadFfmpeg(onLog) {
     if (ffmpeg) return ffmpeg;
     if (loadingPromise) return loadingPromise;
 
+    onLogCb = onLog || null;
     loadingPromise = (async () => {
         // UMD builds expose globals: window.FFmpegWASM and window.FFmpegUtil.
         await loadScript(`${FFMPEG_DIR}ffmpeg.js`);
         await loadScript(`${FFMPEG_DIR}util.js`);
-
-        const { FFmpeg } = window.FFmpegWASM;
         fetchFile = window.FFmpegUtil.fetchFile;
-
-        ffmpeg = new FFmpeg();
-        if (onLog) {
-            ffmpeg.on("log", ({ message }) => onLog(message));
-        }
-
-        await ffmpeg.load({
-            coreURL: `${FFMPEG_DIR}ffmpeg-core.js`,
-            wasmURL: `${FFMPEG_DIR}ffmpeg-core.wasm`,
-        });
+        ffmpeg = await createInstance();
         return ffmpeg;
     })();
 
     return loadingPromise;
+}
+
+/**
+ * Tear down the current ffmpeg instance and spin up a fresh one, releasing the
+ * accumulated wasm heap. Called periodically and after a wasm memory error.
+ */
+async function recycleInstance() {
+    try {
+        ffmpeg?.terminate();
+    } catch {
+        /* ignore */
+    }
+    ffmpeg = await createInstance();
+}
+
+/**
+ * Run an ffmpeg operation, recycling the instance beforehand when we've done
+ * enough ops, and retrying once on a wasm "out of bounds" error with a fresh heap.
+ */
+async function runOp(fn) {
+    if (opsSinceLoad >= OPS_BEFORE_RECYCLE) {
+        await recycleInstance();
+    }
+    opsSinceLoad++;
+    try {
+        return await fn();
+    } catch (err) {
+        const msg = String(err?.message || err);
+        if (/out of bounds|memory access|abort|OOM/i.test(msg)) {
+            // Reset the heap and try the operation one more time.
+            await recycleInstance();
+            opsSinceLoad++;
+            return await fn();
+        }
+        throw err;
+    }
 }
 
 function pad(n) {
@@ -77,34 +122,36 @@ async function readOutput(name) {
  * Returns a new Blob. Mirrors update_mp4_metadata().
  */
 export async function updateMp4Metadata(inputBlob, takenAt, location, caption) {
-    const inName = "in.mp4";
-    const outName = "out.mp4";
-    await ffmpeg.writeFile(inName, await fetchFile(inputBlob));
+    return runOp(async () => {
+        const inName = "in.mp4";
+        const outName = "out.mp4";
+        await ffmpeg.writeFile(inName, await fetchFile(inputBlob));
 
-    const args = ["-i", inName, "-c", "copy", "-metadata", `creation_time=${creationTime(takenAt)}`];
+        const args = ["-i", inName, "-c", "copy", "-metadata", `creation_time=${creationTime(takenAt)}`];
 
-    if (location && typeof location.latitude === "number" && typeof location.longitude === "number") {
-        const lat = location.latitude;
-        const lng = location.longitude;
-        args.push(
-            "-metadata",
-            `location=${iso6709(lat, lng)}`,
-            "-metadata",
-            `com.apple.quicktime.location.ISO6709=${iso6709(lat, lng)}`,
-            "-metadata",
-            `location-eng=${lat},${lng}`
-        );
-    }
-    if (caption) {
-        args.push("-metadata", `title=${caption}`);
-    }
-    args.push(outName);
+        if (location && typeof location.latitude === "number" && typeof location.longitude === "number") {
+            const lat = location.latitude;
+            const lng = location.longitude;
+            args.push(
+                "-metadata",
+                `location=${iso6709(lat, lng)}`,
+                "-metadata",
+                `com.apple.quicktime.location.ISO6709=${iso6709(lat, lng)}`,
+                "-metadata",
+                `location-eng=${lat},${lng}`
+            );
+        }
+        if (caption) {
+            args.push("-metadata", `title=${caption}`);
+        }
+        args.push(outName);
 
-    await ffmpeg.exec(args);
-    const result = await readOutput(outName);
-    await safeDelete(inName);
-    await safeDelete(outName);
-    return result;
+        await ffmpeg.exec(args);
+        const result = await readOutput(outName);
+        await safeDelete(inName);
+        await safeDelete(outName);
+        return result;
+    });
 }
 
 /**
@@ -112,22 +159,29 @@ export async function updateMp4Metadata(inputBlob, takenAt, location, caption) {
  * ffmpeg.wasm has no ffprobe, so we parse ffmpeg -i log output for "Audio:".
  */
 export async function hasAudioStream(inputBlob) {
-    const name = "probe.mp4";
-    await ffmpeg.writeFile(name, await fetchFile(inputBlob));
+    return runOp(async () => {
+        const name = "probe.mp4";
+        const instance = ffmpeg;
+        await instance.writeFile(name, await fetchFile(inputBlob));
 
-    let logText = "";
-    const collector = ({ message }) => (logText += message + "\n");
-    ffmpeg.on("log", collector);
-    try {
-        // This exec fails (no output specified) but prints stream info to the log.
-        await ffmpeg.exec(["-i", name]);
-    } catch {
-        // expected
-    } finally {
-        ffmpeg.off("log", collector);
-        await safeDelete(name);
-    }
-    return /Stream #.*Audio:/.test(logText);
+        let logText = "";
+        const collector = ({ message }) => (logText += message + "\n");
+        instance.on("log", collector);
+        try {
+            // This exec fails (no output specified) but prints stream info to the log.
+            await instance.exec(["-i", name]);
+        } catch {
+            // expected
+        } finally {
+            instance.off("log", collector);
+            try {
+                await instance.deleteFile(name);
+            } catch {
+                /* ignore */
+            }
+        }
+        return /Stream #.*Audio:/.test(logText);
+    });
 }
 
 /**
@@ -135,42 +189,44 @@ export async function hasAudioStream(inputBlob) {
  * Returns a new Blob. Mirrors copy_audio_between_videos().
  */
 export async function copyAudioBetweenVideos(sourceBlob, targetBlob) {
-    const srcName = "src.mp4";
-    const tgtName = "tgt.mp4";
-    const outName = "merged.mp4";
-    await ffmpeg.writeFile(srcName, await fetchFile(sourceBlob));
-    await ffmpeg.writeFile(tgtName, await fetchFile(targetBlob));
+    return runOp(async () => {
+        const srcName = "src.mp4";
+        const tgtName = "tgt.mp4";
+        const outName = "merged.mp4";
+        await ffmpeg.writeFile(srcName, await fetchFile(sourceBlob));
+        await ffmpeg.writeFile(tgtName, await fetchFile(targetBlob));
 
-    const baseArgs = [
-        "-i", tgtName,
-        "-i", srcName,
-        "-c:v", "copy",
-        "-map", "0:v:0",
-        "-map", "1:a:0",
-        "-map_metadata", "0",
-        "-shortest",
-        "-avoid_negative_ts", "make_zero",
-        "-y",
-    ];
+        const baseArgs = [
+            "-i", tgtName,
+            "-i", srcName,
+            "-c:v", "copy",
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-map_metadata", "0",
+            "-shortest",
+            "-avoid_negative_ts", "make_zero",
+            "-y",
+        ];
 
-    try {
-        // Try stream copy (no re-encode) first.
-        await ffmpeg.exec([...baseArgs.slice(0, 6), "-c:a", "copy", ...baseArgs.slice(6), outName]);
-    } catch {
-        // Fallback to AAC re-encode.
-        await ffmpeg.exec([
-            ...baseArgs.slice(0, 6),
-            "-c:a", "aac", "-b:a", "256k", "-ar", "48000",
-            ...baseArgs.slice(6),
-            outName,
-        ]);
-    }
+        try {
+            // Try stream copy (no re-encode) first.
+            await ffmpeg.exec([...baseArgs.slice(0, 6), "-c:a", "copy", ...baseArgs.slice(6), outName]);
+        } catch {
+            // Fallback to AAC re-encode.
+            await ffmpeg.exec([
+                ...baseArgs.slice(0, 6),
+                "-c:a", "aac", "-b:a", "256k", "-ar", "48000",
+                ...baseArgs.slice(6),
+                outName,
+            ]);
+        }
 
-    const result = await readOutput(outName);
-    await safeDelete(srcName);
-    await safeDelete(tgtName);
-    await safeDelete(outName);
-    return result;
+        const result = await readOutput(outName);
+        await safeDelete(srcName);
+        await safeDelete(tgtName);
+        await safeDelete(outName);
+        return result;
+    });
 }
 
 async function safeDelete(name) {
