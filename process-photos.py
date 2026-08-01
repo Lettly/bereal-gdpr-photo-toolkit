@@ -1,16 +1,17 @@
+import argparse
 import json
-from datetime import datetime
-from PIL import Image, ImageDraw, ImageOps, ExifTags
 import logging
-from pathlib import Path
-import piexif
 import os
-import time
 import shutil
-from iptcinfo3 import IPTCInfo
-import imageio_ffmpeg as imageio
 import subprocess
-import logging
+import tempfile
+import zipfile
+from datetime import datetime
+from pathlib import Path, PurePosixPath
+
+import piexif
+from iptcinfo3 import IPTCInfo
+from PIL import Image, ImageDraw
 
 # ANSI escape codes for text styling
 STYLING = {
@@ -59,11 +60,62 @@ processing_tool = "github/bereal-gdpr-photo-toolkit"
 primary_images = []
 secondary_images = []
 
-# Define paths using pathlib
-photo_folder = Path("Photos/post/")
-bereal_folder = Path("Photos/bereal")
-output_folder = Path("Photos/post/__processed")
-output_folder_combined = Path("Photos/post/__combined")
+parser = argparse.ArgumentParser(description="Process media from a BeReal GDPR export ZIP.")
+parser.add_argument("zip_file", type=Path, help="Path to the BeReal GDPR export ZIP")
+parser.add_argument(
+    "--output",
+    type=Path,
+    default=Path("output"),
+    help="Output directory (default: output)",
+)
+args = parser.parse_args()
+
+if not args.zip_file.is_file() or not zipfile.is_zipfile(args.zip_file):
+    parser.error(f"Not a valid ZIP file: {args.zip_file}")
+
+extraction_directory = tempfile.TemporaryDirectory(prefix="bereal-export-")
+archive_root = Path(extraction_directory.name).resolve()
+with zipfile.ZipFile(args.zip_file) as archive:
+    for member in archive.infolist():
+        destination = (archive_root / member.filename).resolve()
+        if not destination.is_relative_to(archive_root):
+            parser.error(f"Unsafe path in ZIP file: {member.filename}")
+        archive.extract(member, archive_root)
+
+posts_files = list(archive_root.rglob("posts.json"))
+if not posts_files:
+    parser.error("The ZIP file does not contain posts.json")
+if len(posts_files) > 1:
+    parser.error("The ZIP file contains more than one posts.json")
+
+posts_file = posts_files[0]
+media_files = [
+    path
+    for path in archive_root.rglob("*")
+    if path.is_file() and path.suffix.lower() in {".webp", ".mp4", ".jpg", ".jpeg"}
+]
+
+
+def resolve_media_path(path_from_json):
+    archive_path = PurePosixPath(path_from_json.replace("\\", "/").lstrip("/"))
+    matching_paths = [
+        path
+        for path in media_files
+        if len(path.parts) >= len(archive_path.parts)
+        and path.parts[-len(archive_path.parts) :] == archive_path.parts
+    ]
+    if not matching_paths:
+        matching_paths = [path for path in media_files if path.name == archive_path.name]
+    if len(matching_paths) == 1:
+        return matching_paths[0]
+    if len(matching_paths) > 1:
+        logging.warning(f"Multiple files match {path_from_json}; using {matching_paths[0]}")
+        return matching_paths[0]
+    return archive_root / archive_path
+
+
+output_folder = args.output
+output_folder_combined = output_folder / "combined"
 output_folder.mkdir(
     parents=True, exist_ok=True
 )  # Create the output folder if it doesn't exist
@@ -74,31 +126,15 @@ print(
     + "\nThe following paths are set for the input and output files:"
     + STYLING["RESET"]
 )
-print(f"Photo folder: {photo_folder}")
-if os.path.exists(bereal_folder):
-    print(f"Older photo folder: {bereal_folder}")
+print(f"ZIP file: {args.zip_file}")
 print(f"Output folder for singular images: {output_folder}")
 print(f"Output folder for combined images: {output_folder_combined}")
 # print("\nDeduplication is active. No files will be overwritten or deleted.")
 print("")
 
 
-# Function to count number of input files
-def count_files_in_folder(folder_path):
-    folder = Path(folder_path)
-    webp_count = len(list(folder.glob("*.webp")))
-    mp4_count = len(list(folder.glob("*.mp4")))
-    return webp_count + mp4_count
-
-
-number_of_files = count_files_in_folder(photo_folder)
-print(f"Number of media files (WebP/MP4) in {photo_folder}: {number_of_files}")
-
-if os.path.exists(bereal_folder):
-    number_of_files = count_files_in_folder(bereal_folder)
-    print(
-        f"Number of (older) media files (WebP/MP4) in {bereal_folder}: {number_of_files}"
-    )
+number_of_files = len(media_files)
+print(f"Number of media files in ZIP: {number_of_files}")
 
 # Settings
 ## Initial choice for accessing advanced settings
@@ -582,33 +618,24 @@ def remove_backup_files(directory):
 
 # Load the JSON file
 try:
-    with open("posts.json", encoding="utf8") as f:
+    with posts_file.open(encoding="utf8") as f:
         data = json.load(f)
 except FileNotFoundError:
-    logging.error("JSON file not found. Please check the path.")
+    logging.error(f"JSON file not found: {posts_file}")
     exit()
 
 # Process files
 for entry in data:
     try:
-        # Extract only the filename from the path and then append it to the photo_folder path
-        primary_filename = Path(entry["primary"]["path"]).name
-        secondary_filename = Path(entry["secondary"]["path"]).name
-
         # Check if primary/secondary are videos
         primary_is_video = entry["primary"].get("mediaType") == "video"
         secondary_is_video = entry["secondary"].get("mediaType") == "video"
 
         if "btsMedia" in entry:
-            bts_filename = Path(entry["btsMedia"]["path"]).name
-            bts_path = photo_folder / bts_filename
+            bts_path = resolve_media_path(entry["btsMedia"]["path"])
 
-        primary_path = photo_folder / primary_filename
-        secondary_path = photo_folder / secondary_filename
-
-        if not os.path.exists(primary_path):
-            primary_path = bereal_folder / primary_filename
-            secondary_path = bereal_folder / secondary_filename
+        primary_path = resolve_media_path(entry["primary"]["path"])
+        secondary_path = resolve_media_path(entry["secondary"]["path"])
 
         taken_at = datetime.strptime(entry["takenAt"], "%Y-%m-%dT%H:%M:%S.%fZ")
         location = entry.get(

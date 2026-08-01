@@ -73,30 +73,25 @@ Request your data according to Article 15 GDPR by using the in-app chat. You can
 1. **Request and Download Your Data:**
     - Use the BeReal app to request your data export.
     - Download the ZIP file when you receive it.
-2. **Extract the ZIP:**
-
-    - Place the ZIP file in this project folder and unzip it:
-
-    ```console
-    unzip -o <bereal_gdpr_file.zip>
-    ```
-
-3. **Install Dependencies:**
+2. **Install Dependencies and Process the ZIP:**
 
     - If using mise:
 
     ```console
     mise install
     mise run setup
-    mise run process-photos
+    mise run process-photos -- /path/to/bereal_gdpr_file.zip
     ```
 
     - Or with poetry:
 
     ```console
     poetry install
-    poetry run python process-photos.py
+    poetry run python process-photos.py /path/to/bereal_gdpr_file.zip
     ```
+
+Processed media is written to the Git-ignored `output/` directory by default. Use
+`--output /path/to/folder` to choose a different destination.
 
 # Data Requirement
 

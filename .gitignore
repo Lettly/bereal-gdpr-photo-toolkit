@@ -5,6 +5,7 @@
 *.DS_Store
 *.json
 *.zip
+output/
 
 # Poetry files
 .venv/
