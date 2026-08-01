@@ -1,190 +1,226 @@
-# bereal-gdpr-photo-toolkit
+# BeReal GDPR Photo Toolkit
 
-When you request your data from BeReal, you receive a ZIP file containing all your photos and videos. Images come in WebP format and videos in MP4 format, but unfortunately they don't contain proper metadata such as when the content was captured. This information is stored in a JSON file, which is great for processing the data but not easily human readable.
+Process a BeReal GDPR export ZIP into browsable, better-tagged media.
 
-The script `process-photos.py` automates the process of converting images to JPEG and processing videos, along with renaming and updating metadata using the information from the BeReal JSON file.
+BeReal exports store most useful context, such as capture time, location, and captions, in `posts.json` rather than directly in the photo or video files. This project rebuilds that context into the media files, renames them chronologically, and can recreate combined BeReal-style memories.
 
-# Features
+The toolkit currently has two interfaces:
 
-## Image Processing
+- **Browser app** in `web/`: runs locally in the browser, keeps files on your device, and downloads or streams an output ZIP.
+- **Python script** in `process-photos.py`: command-line processor for local/offline use.
 
--   **Automatic Conversion:** Converts all BeReal WebP images to JPEG format for better compatibility and metadata support.
--   **EXIF & IPTC Metadata Injection:** Adds original capture date, geolocation, and caption to JPEGs using data from the BeReal JSON file.
--   **Image Combination:** Optionally combines the primary and secondary images into a single JPEG, simulating the original BeReal memory layout (with rounded corners and outline for the secondary image).
+## What It Does
 
-## Video Processing
+- Reads a BeReal GDPR export ZIP and finds the single `posts.json` inside it.
+- Resolves media referenced by `posts.json`, including nested archive paths.
+- Processes primary, secondary, and BTS media.
+- Renames files with the post timestamp and role, for example `2024-01-31T18-42-05_primary.jpg`.
+- Converts WebP images to JPEG when enabled.
+- Adds JPEG EXIF metadata for capture date, GPS coordinates, and caption.
+- Adds JPEG IPTC metadata for caption, source, and processing tool.
+- Adds MP4 metadata for creation time, GPS location, and caption/title.
+- Synchronizes audio between paired primary and secondary videos when only one side has audio.
+- Optionally creates combined BeReal-style images with the secondary image overlaid on the primary image.
+- Skips missing files and continues processing the rest of the export.
 
--   **Full Video Support:** Processes MP4 videos from primary, secondary, and BTS media with complete metadata preservation.
--   **Video Metadata Injection:** Adds creation date, GPS coordinates (in multiple formats for maximum compatibility), and captions to MP4 videos.
--   **Smart Audio Synchronization:** Automatically detects when one video has audio and the other doesn't, then copies audio between them while preserving original quality.
--   **Quality Preservation:** Audio copying uses direct stream copying when possible to maintain original audio quality without re-encoding.
--   **Metadata Preservation:** Ensures all video metadata (timestamps, GPS, etc.) is preserved during audio copying operations.
+## Browser App
 
-## General Features
+The browser app is the recommended interface for most users. It processes the ZIP client-side; the export is not uploaded to a server.
 
--   **Intelligent File Detection:** Automatically detects whether media is image or video and processes accordingly.
--   **Filename Renaming:** Renames all media files to include the date/time and other relevant info, making them easier to browse and search.
--   **Placeholder Skipping:** When videos are present, automatically skips processing placeholder images to avoid duplicates.
--   **Static Metadata:** Adds static source information (e.g., `source = "BeReal app"`, `originating program = "github/bereal-gdpr-photo-toolkit"`) to all processed files.
--   **Customizable Workflow:** Prompts allow you to choose whether to convert to JPEG, preserve original filenames, and combine images.
--   **Robust Error Handling:** Gracefully handles missing files and continues processing remaining media.
--   **Batch Processing:** Handles all images and videos in the exported BeReal data in one go.
--   **Cross-platform:** Works on macOS, Linux, and Windows (Python 3.12+ required).
--   **Safe Overwrite:** Will not overwrite your original BeReal files; outputs are saved separately.
--   **Verbose Logging:** Provides clear output about what is being processed and any issues encountered.
+The app loads JSZip and piexifjs from pinned jsDelivr CDN URLs, and loads ffmpeg.wasm from this repository under `web/vendor/ffmpeg/`.
 
-# Prerequisites
+### Run Locally
 
--   [Poetry](https://python-poetry.org/docs/#installing-with-pipx)
--   [mise (optional but suggested)](https://mise.jdx.dev/getting-started.html)
--   Python 3.12 or newer (3.13+ recommended)
+With `mise`:
 
-## Request your data
+```console
+mise install
+mise run web
+```
 
-Request your data according to Article 15 GDPR by using the in-app chat. You can generate a template using [datarequests.org](https://www.datarequests.org/generator/).
+Then open `http://localhost:8000`.
 
-# Running the Script
+Without `mise`, serve the `web/` directory with any static file server:
 
-1. **Request and Download Your Data:**
-    - Use the BeReal app to request your data export.
-    - Download the ZIP file when you receive it.
-2. **Install Dependencies and Process the ZIP:**
+```console
+python -m http.server 8000 --directory web
+```
 
-    - If using mise:
+### Browser Features
 
-    ```console
-    mise install
-    mise run setup
-    mise run process-photos -- /path/to/bereal_gdpr_file.zip
-    ```
+- Drag-and-drop ZIP selection.
+- Image conversion and metadata injection.
+- Optional date range filtering.
+- Optional combined images.
+- Optional video metadata and audio sync using vendored `ffmpeg.wasm`.
+- Output ZIP generation with `STORE` compression to avoid unnecessary recompression of JPEG/WebP/MP4 media.
+- Streaming output directly to disk in browsers that support the File System Access API; otherwise it falls back to an in-memory download button.
 
-    - Or with poetry:
+The vendored ffmpeg.wasm runtime keeps the ffmpeg worker same-origin, which avoids browser restrictions on cross-origin workers.
 
-    ```console
-    poetry install
-    poetry run python process-photos.py /path/to/bereal_gdpr_file.zip
-    ```
+## Python Script
 
-Processed media is written to the Git-ignored `output/` directory by default. Use
-`--output /path/to/folder` to choose a different destination.
+Use the Python script if you prefer a CLI workflow or want direct filesystem output instead of an output ZIP.
 
-# Data Requirement
+### Requirements
 
-The script processes images and videos based on data provided in a JSON file obtained from BeReal. The JSON file should follow this format:
+- Python 3.13 or newer.
+- Poetry.
+- `ffmpeg` and `ffprobe` available on `PATH` for video metadata and audio sync.
+- `mise` is optional, but it installs the expected Python, Poetry, and ffmpeg tools for this project.
+
+### Install And Run
+
+With `mise`:
+
+```console
+mise install
+mise run setup
+mise run process-photos -- /path/to/bereal-export.zip
+```
+
+With Poetry directly:
+
+```console
+poetry install
+poetry run python process-photos.py /path/to/bereal-export.zip
+```
+
+By default, processed media is written to the Git-ignored `output/` directory. Use `--output` to choose a different folder:
+
+```console
+poetry run python process-photos.py /path/to/bereal-export.zip --output /path/to/output-folder
+```
+
+### Python Defaults
+
+Unless you enter advanced settings, the script uses these defaults:
+
+- Convert copied images from WebP to JPEG.
+- Do not keep the original filename in the output filename.
+- Do not create combined images.
+
+If advanced settings are enabled, the script asks whether to convert images, whether to keep original filenames, and whether to create combined images.
+
+## Output Layout
+
+The Python script writes files directly to the output folder:
+
+```text
+output/
+  2024-01-31T18-42-05_primary.jpg
+  2024-01-31T18-42-05_secondary.jpg
+  2024-02-01T09-12-33_primary.mp4
+  2024-02-01T09-12-33_secondary.mp4
+  2024-02-01T09-12-33_bts.mp4
+  combined/
+    2024-01-31T18-42-05_combined.jpg
+```
+
+The browser app creates the same `output/` layout inside a downloadable `bereal-output.zip`.
+
+If duplicate names are produced, the toolkit appends a numeric suffix such as `_1`.
+
+## Export Format
+
+The ZIP must contain exactly one `posts.json`. Media files can be WebP, JPEG, JPG, or MP4. Each post is expected to reference primary and secondary media, and may also include BTS media, location, and caption data.
+
+Example shape:
 
 ```json
 [
-    {
-        "primary": {
-            "path": "/path/to/primary/image.webp",
-            "mediaType": "image",
-            "other": "data"
-        },
-        "secondary": {
-            "path": "/path/to/secondary/image.webp",
-            "mediaType": "image",
-            "other": "data"
-        },
-        "takenAt": "YYYY-MM-DDTHH:MM:SS.sssZ",
-        "location": {
-            "latitude": 12.345,
-            "longitude": 67.89
-        },
-        "caption": "Optional caption text",
-        "other": "data"
+  {
+    "primary": {
+      "path": "path/to/primary.webp",
+      "mediaType": "image"
     },
-    {
-        "primary": {
-            "path": "/path/to/primary/video.mp4",
-            "mediaType": "video",
-            "other": "data"
-        },
-        "secondary": {
-            "path": "/path/to/secondary/video.mp4",
-            "mediaType": "video",
-            "other": "data"
-        },
-        "btsMedia": {
-            "path": "/path/to/bts/video.mp4",
-            "mediaType": "video",
-            "other": "data"
-        },
-        "takenAt": "YYYY-MM-DDTHH:MM:SS.sssZ",
-        "location": {
-            "latitude": 12.345,
-            "longitude": 67.89
-        },
-        "other": "data"
-    }
+    "secondary": {
+      "path": "path/to/secondary.webp",
+      "mediaType": "image"
+    },
+    "takenAt": "2024-01-31T18:42:05.000Z",
+    "location": {
+      "latitude": 45.4642,
+      "longitude": 9.19
+    },
+    "caption": "Optional caption text"
+  },
+  {
+    "primary": {
+      "path": "path/to/primary.mp4",
+      "mediaType": "video"
+    },
+    "secondary": {
+      "path": "path/to/secondary.mp4",
+      "mediaType": "video"
+    },
+    "btsMedia": {
+      "path": "path/to/bts.mp4",
+      "mediaType": "video"
+    },
+    "takenAt": "2024-02-01T09:12:33.000Z"
+  }
 ]
 ```
 
-# Advanced Settings
+## Metadata Details
 
-By default, the script converts images to JPEG, keeps the original filenames in the converted filenames, and does NOT create combined images. Users have the ability to customize how the script behaves through a series of prompts:
+### JPEG Images
 
-1. **Conversion to JPEG:** Choose whether to convert WebP images to JPEG format.
-2. **Filename Preservation:** Decide whether to keep the original filename within the new filename structure.
-3. **Image Combination:** Opt in or out of combining primary and secondary images (only applies to images, not videos).
+When image conversion is enabled, output JPEGs receive:
 
-## Image Combine Logic
+- EXIF `DateTimeOriginal` from `takenAt`.
+- EXIF GPS latitude and longitude when `location` is present.
+- EXIF `ImageDescription` from `caption` when present.
+- IPTC `Caption-Abstract` from `caption` when present.
+- IPTC `Source` set to `BeReal app`.
+- IPTC `Originating Program` set to `github/bereal-gdpr-photo-toolkit`.
 
-The script includes an option to combine the primary and secondary images into a single image, simulating the appearance of original BeReal memories. Using Pillow, the secondary image is resized and positioned on top of the primary image, with its corners rounded and an outline added.
+If conversion is disabled, images are copied and renamed without adding metadata.
 
-The values used are:
+### MP4 Videos
 
-```python
-corner_radius = 60 # radius for the rounded corners
-outline_size = 7 # thickness of the black outline
-position = (55, 55) # margin to the borders
-```
+When video metadata processing is enabled, output MP4s receive:
 
-Adjust values if you want a different look or place the image in a different corner.
+- `creation_time` from `takenAt`.
+- GPS location in ISO 6709 format.
+- Apple QuickTime location metadata.
+- `location-eng` metadata.
+- `title` from `caption` when present.
 
-## Adding Metadata Tags
+For primary/secondary video pairs, the toolkit checks audio streams. If one video has audio and the other does not, it copies the audio stream to the silent video while preserving the target video stream and metadata where possible.
 
-The script adds comprehensive metadata to both images and videos using the information from the BeReal JSON file.
+## Combined Images
 
-### Image Metadata (EXIF & IPTC)
+When enabled, combined images recreate the BeReal memory layout by drawing the secondary image on top of the primary image.
 
-For JPEG images, the following metadata is added:
-
--   **Creation date/time** - When the photo was taken
--   **GPS coordinates** - Geolocation where the photo was captured
--   **Caption** - Any text caption associated with the photo
--   **Static source information** - References the original source
-
-### Video Metadata (MP4)
-
-For MP4 videos, the following metadata is added:
-
--   **Creation timestamp** - When the video was recorded
--   **GPS coordinates** - Location data in multiple formats:
-    -   ISO 6709 format (`+44.3304+113.0162/`)
-    -   Apple QuickTime format (`com.apple.quicktime.location.ISO6709`)
-    -   Alternative format (`location-eng`)
--   **Caption** - Video title/description
--   **Static source information** - References the original source
-
-### Static Metadata
-
-All processed files include static information to help identify their origin:
+Current layout constants:
 
 ```python
-source = "BeReal app"
-originating program = "github/bereal-gdpr-photo-toolkit"
+corner_radius = 60
+outline_size = 7
+position = (55, 55)
+scaling_factor = 1 / 3.33333333
 ```
 
-### Audio Synchronization
+Combined images are only created for image/image pairs. Posts containing video media are skipped for combined output.
 
-When processing videos, the script automatically:
+## Deployment
 
--   Detects which videos have audio streams
--   Copies audio from videos with sound to those without
--   Preserves original audio quality using direct stream copying
--   Maintains all metadata during audio operations
+The static web app is deployed to GitHub Pages by `.github/workflows/deploy-pages.yml` whenever files under `web/` or the workflow itself change on `main`. The workflow uploads the `web/` directory as the Pages artifact.
 
-When opening processed files, this metadata can look like this:
-![](images/screenshot_iptc.png)
+## Requesting Your BeReal Data
 
-**Metadata injection works with JPEG images and MP4 videos. Videos receive comprehensive metadata including GPS coordinates in multiple formats for maximum compatibility.**
+Request your data from BeReal through the app. You can use a GDPR access request template from [datarequests.org](https://www.datarequests.org/generator/) if you need one.
+
+## Notes And Limitations
+
+- The toolkit never modifies the original ZIP.
+- The Python script extracts the ZIP to a temporary directory and writes processed media separately.
+- The browser app keeps processing local to the browser, but large exports can still be memory-intensive, especially when video processing or combined images are enabled.
+- Browser video processing downloads and runs the vendored ffmpeg.wasm runtime, which is roughly 30 MB.
+- Metadata support varies by viewer. Some apps display EXIF/IPTC/QuickTime tags differently or ignore custom fields.
+
+When opening processed files, the metadata can look like this:
+
+![Metadata screenshot](images/screenshot_iptc.png)
