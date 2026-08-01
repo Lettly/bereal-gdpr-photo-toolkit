@@ -263,6 +263,31 @@ main {
     margin: -0.35rem 0 0.75rem;
 }
 
+.ambient-game-paused .ambient-bubble {
+    animation-play-state: paused;
+}
+
+.ambient-pause {
+    background: rgba(254, 215, 170, 0.12);
+    border: 1px solid rgba(254, 215, 170, 0.34);
+    border-radius: 999px;
+    color: #fed7aa;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.8rem;
+    margin-left: 0.45rem;
+    padding: 0.18rem 0.55rem;
+}
+
+.ambient-pause:hover {
+    background: rgba(254, 215, 170, 0.2);
+}
+
+.ambient-pause:focus-visible {
+    outline: 2px solid #fed7aa;
+    outline-offset: 2px;
+}
+
 .log {
     background: #0b0d11;
     border: 1px solid var(--card-border);

@@ -25,6 +25,7 @@ const ambientGame = el("ambient-game");
 const ambientStatus = el("ambient-status");
 const ambientTimer = el("ambient-timer");
 const ambientScore = el("ambient-score");
+const ambientPause = el("ambient-pause");
 const logEl = el("log");
 const resultSection = el("result-section");
 const summaryEl = el("summary");
@@ -40,6 +41,7 @@ const ambientGameController = createAmbientGame({
     status: ambientStatus,
     timer: ambientTimer,
     score: ambientScore,
+    pauseButton: ambientPause,
 });
 
 // ---- UI helpers ----
