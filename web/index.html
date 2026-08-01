@@ -1,244 +1,103 @@
 <!DOCTYPE html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>BeReal GDPR Photo Toolkit - Web App</title>
-        <link rel="stylesheet" href="styles.css" />
-        <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
-    </head>
-    <body>
-        <div class="container">
-            <header>
-                <h1>🤳 BeReal GDPR Photo Toolkit</h1>
-                <p>
-                    Process your BeReal photos and videos directly in your
-                    browser
-                </p>
-            </header>
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BeReal GDPR Photo Toolkit &mdash; Web</title>
+    <meta name="description" content="Process your BeReal GDPR export ZIP entirely in your browser: convert WebP to JPEG, inject EXIF/IPTC metadata, add video metadata, and create combined images. Nothing is uploaded." />
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+    <header class="site-header">
+        <h1>BeReal GDPR Photo Toolkit</h1>
+        <p class="tagline">Process your BeReal export ZIP directly in your browser. Your files never leave your device.</p>
+    </header>
 
-            <div class="upload-section">
-                <div class="upload-area" id="uploadArea">
-                    <div class="upload-content">
-                        <div class="upload-icon">📁</div>
-                        <h3>Upload Your BeReal Data</h3>
-                        <p>
-                            Drop your BeReal export ZIP file here or click to
-                            browse
-                        </p>
-                        <input
-                            type="file"
-                            id="fileInput"
-                            accept=".zip"
-                            multiple
-                        />
-                        <button
-                            class="browse-btn"
-                            onclick="document.getElementById('fileInput').click()"
-                        >
-                            Browse Files
-                        </button>
-                    </div>
-                </div>
+    <main>
+        <!-- Step 1: Upload -->
+        <section id="upload-section" class="card">
+            <h2>1. Select your BeReal export ZIP</h2>
+            <div id="dropzone" class="dropzone">
+                <input type="file" id="file-input" accept=".zip" hidden />
+                <p><strong>Drag &amp; drop</strong> your BeReal GDPR ZIP here</p>
+                <p>or</p>
+                <button type="button" id="browse-btn" class="btn">Browse files</button>
+                <p id="file-name" class="file-name"></p>
             </div>
+        </section>
 
-            <div
-                class="upload-progress-section"
-                id="uploadProgressSection"
-                style="display: none"
-            >
-                <h2>Upload Progress</h2>
-                <div class="progress-bar">
-                    <div class="progress-fill" id="uploadProgressFill"></div>
+        <!-- Step 2: Settings -->
+        <section id="settings-section" class="card hidden">
+            <h2>2. Settings</h2>
+            <p class="hint">Defaults match the Python script: convert to JPEG, do not keep original filename, do not create combined images.</p>
+
+            <label class="setting">
+                <input type="checkbox" id="opt-convert-jpeg" checked />
+                <span>Convert images from WebP to JPEG <em>(adds EXIF/IPTC metadata)</em></span>
+            </label>
+
+            <label class="setting">
+                <input type="checkbox" id="opt-keep-filename" />
+                <span>Keep original filename in the renamed file</span>
+            </label>
+
+            <label class="setting">
+                <input type="checkbox" id="opt-combined" />
+                <span>Create combined images (BeReal memory layout)</span>
+            </label>
+
+            <fieldset class="setting-group">
+                <legend>Date range (optional)</legend>
+                <p class="hint">Only process posts taken within this range. Leave blank to process everything.</p>
+                <div class="date-range">
+                    <label>From <input type="date" id="opt-date-from" /></label>
+                    <label>To <input type="date" id="opt-date-to" /></label>
                 </div>
-                <div class="progress-text" id="uploadProgressText">
-                    Reading files...
-                </div>
+                <p id="date-range-info" class="hint"></p>
+            </fieldset>
+
+            <fieldset class="setting-group">
+                <legend>Video processing</legend>
+                <label class="setting">
+                    <input type="checkbox" id="opt-video-metadata" checked />
+                    <span>Inject metadata into videos &amp; sync audio <em>(uses ffmpeg.wasm, ~30&nbsp;MB download)</em></span>
+                </label>
+            </fieldset>
+
+            <div class="actions">
+                <button type="button" id="process-btn" class="btn btn-primary">Process</button>
             </div>
+        </section>
 
-            <div
-                class="decompression-progress-section"
-                id="decompressionProgressSection"
-                style="display: none"
-            >
-                <h2>ZIP Decompression Progress</h2>
-                <div class="progress-bar">
-                    <div
-                        class="progress-fill"
-                        id="decompressionProgressFill"
-                    ></div>
-                </div>
-                <div class="progress-text" id="decompressionProgressText">
-                    Extracting files...
-                </div>
-                <div class="progress-details" id="decompressionProgressDetails">
-                    <small>Preparing to extract...</small>
-                </div>
+        <!-- Step 3: Progress -->
+        <section id="progress-section" class="card hidden">
+            <h2>3. Processing</h2>
+            <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+            <p id="progress-status" class="progress-status">Starting&hellip;</p>
+            <pre id="log" class="log" aria-live="polite"></pre>
+        </section>
+
+        <!-- Step 4: Result -->
+        <section id="result-section" class="card hidden">
+            <h2>4. Done</h2>
+            <div id="summary" class="summary"></div>
+            <div class="actions">
+                <button type="button" id="download-btn" class="btn btn-primary">Download output ZIP</button>
+                <button type="button" id="reset-btn" class="btn">Process another export</button>
             </div>
+        </section>
+    </main>
 
-            <div
-                class="settings-section"
-                id="settingsSection"
-                style="display: none"
-            >
-                <h2>Processing Settings</h2>
-                <div class="settings-grid">
-                    <div class="setting-item">
-                        <label>
-                            <input type="checkbox" id="convertToJpeg" checked />
-                            Convert WebP images to JPEG
-                        </label>
-                        <small
-                            >Enables metadata injection and better
-                            compatibility</small
-                        >
-                    </div>
-                    <div class="setting-item">
-                        <label>
-                            <input type="checkbox" id="keepOriginalFilename" />
-                            Keep original filename in output
-                        </label>
-                        <small
-                            >Include original filename in the processed file
-                            name</small
-                        >
-                    </div>
-                    <div class="setting-item">
-                        <label>
-                            <input type="checkbox" id="createCombinedImages" />
-                            Create combined images
-                        </label>
-                        <small
-                            >Combine primary and secondary images like original
-                            BeReal memories</small
-                        >
-                    </div>
-                </div>
-                <div
-                    class="video-info-box"
-                    style="
-                        background-color: #f0f8ff;
-                        border: 1px solid #b6d7ff;
-                        padding: 12px;
-                        border-radius: 8px;
-                        margin: 15px 0;
-                    "
-                >
-                    <h4 style="margin: 0 0 8px 0; color: #0066cc">
-                        🎥 Video Processing
-                    </h4>
-                    <p style="margin: 0; font-size: 0.9em; color: #333">
-                        MP4 videos and BTS media are now supported! Videos will
-                        be renamed with timestamps and preserved with their
-                        original quality.
-                        <strong>Note:</strong> Audio synchronization between
-                        primary/secondary videos requires the desktop Python
-                        version with FFmpeg.
-                    </p>
-                </div>
-                <button
-                    class="process-btn"
-                    id="processBtn"
-                    onclick="startProcessing()"
-                >
-                    Start Processing
-                </button>
-            </div>
+    <footer class="site-footer">
+        <p>
+            100% client-side. Based on
+            <a href="https://github.com/Flexionn/bereal-gdpr-photo-toolkit" target="_blank" rel="noopener">bereal-gdpr-photo-toolkit</a>.
+        </p>
+    </footer>
 
-            <div
-                class="progress-section"
-                id="progressSection"
-                style="display: none"
-            >
-                <h2>Processing Progress</h2>
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progressFill"></div>
-                </div>
-                <div class="progress-text" id="progressText">
-                    Initializing...
-                </div>
-                <div
-                    class="memory-indicator"
-                    id="memoryIndicator"
-                    style="display: none"
-                >
-                    <small
-                        >Memory: <span id="memoryUsage">0MB</span> /
-                        <span id="memoryLimit">0MB</span></small
-                    >
-                </div>
-                <div class="debug-controls" style="margin-bottom: 15px">
-                    <button class="debug-btn" onclick="toggleDebugMode()">
-                        🔧 Debug Mode
-                    </button>
-                    <button class="debug-btn" onclick="clearLogs()">
-                        🗑️ Clear Logs
-                    </button>
-                    <button class="debug-btn" onclick="showSystemInfo()">
-                        ℹ️ System Info
-                    </button>
-                    <button class="debug-btn" onclick="forceGC()">
-                        🧹 Force Cleanup
-                    </button>
-                </div>
-                <div class="log-output" id="logOutput"></div>
-            </div>
-
-            <div
-                class="results-section"
-                id="resultsSection"
-                style="display: none"
-            >
-                <h2>Processing Complete</h2>
-                <div class="results-summary" id="resultsSummary"></div>
-                <div class="download-section">
-                    <button
-                        class="download-btn"
-                        id="downloadBtn"
-                        onclick="downloadResults()"
-                    >
-                        📥 Download Processed Files
-                    </button>
-                </div>
-            </div>
-
-            <div class="info-section">
-                <h2>About This Tool</h2>
-                <p>
-                    This web application processes BeReal GDPR export data
-                    directly in your browser using WebAssembly. Your files never
-                    leave your device, ensuring complete privacy.
-                </p>
-
-                <div class="features">
-                    <div class="feature">
-                        <h3>🖼️ Image Processing</h3>
-                        <p>
-                            Converts WebP to JPEG, adds EXIF/IPTC metadata
-                            including timestamps, GPS coordinates, and captions
-                        </p>
-                    </div>
-                    <div class="feature">
-                        <h3>🎥 Video Processing</h3>
-                        <p>
-                            Processes MP4 videos including BTS media. Videos are
-                            renamed with timestamps and basic metadata is
-                            preserved. For audio synchronization between
-                            primary/secondary videos, use the desktop Python
-                            version.
-                        </p>
-                    </div>
-                    <div class="feature">
-                        <h3>🔒 Privacy First</h3>
-                        <p>
-                            All processing happens locally in your browser - no
-                            data is sent to any server
-                        </p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <script src="app.js"></script>
-    </body>
+    <!-- Libraries (CDN, pinned versions) -->
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.min.js"></script>
+    <script src="app.js" type="module"></script>
+</body>
 </html>

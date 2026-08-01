@@ -1,6 +1,7 @@
 [tools]
 python = "3.13"
 ffmpeg = "latest"
+poetry = "latest"
 
 # Python
 
@@ -14,3 +15,9 @@ depends = ["python-install"]
 # Run
 [tasks.process-photos]
 run = "poetry run python process-photos.py"
+
+# Web dev server
+[tasks.web]
+description = "Serve the web app locally at http://localhost:8000"
+dir = "web"
+run = "python -m http.server 8000"
