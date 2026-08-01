@@ -8,6 +8,7 @@ import {
     hasAudioStream,
     copyAudioBetweenVideos,
 } from "./video.js";
+import { createAmbientGame } from "./ambient-game.js";
 
 // ---- DOM ----
 const el = (id) => document.getElementById(id);
@@ -20,6 +21,10 @@ const processBtn = el("process-btn");
 const progressSection = el("progress-section");
 const progressFill = el("progress-fill");
 const progressStatus = el("progress-status");
+const ambientGame = el("ambient-game");
+const ambientStatus = el("ambient-status");
+const ambientTimer = el("ambient-timer");
+const ambientScore = el("ambient-score");
 const logEl = el("log");
 const resultSection = el("result-section");
 const summaryEl = el("summary");
@@ -30,6 +35,12 @@ let selectedFile = null;
 let outputZipBlob = null;
 let fileStreamHandle = null; // FileSystemFileHandle when streaming to disk
 let savedToDisk = false;
+const ambientGameController = createAmbientGame({
+    root: ambientGame,
+    status: ambientStatus,
+    timer: ambientTimer,
+    score: ambientScore,
+});
 
 // ---- UI helpers ----
 function log(message, kind = "") {
@@ -186,6 +197,7 @@ processBtn.addEventListener("click", async () => {
     try {
         await processExport(selectedFile, opts);
     } catch (err) {
+        ambientGameController.stop();
         console.error(err);
         log(`Fatal error: ${err.message || err}`, "err");
         progressStatus.textContent = "Failed. See log above.";
@@ -268,6 +280,9 @@ async function processExport(zipFile, opts) {
     async function readBlob(mediaFile) {
         return await mediaFile.entry.async("blob");
     }
+
+    ambientGameController.start();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
 
     for (let idx = 0; idx < data.length; idx++) {
         const entry = data[idx];
@@ -500,6 +515,7 @@ async function processExport(zipFile, opts) {
     }
 
     setProgress(1, "Done.");
+    ambientGameController.stop();
     log(
         `Finished processing. Processed: ${counters.processed}, Converted: ${counters.converted}, ` +
             `Skipped: ${counters.skipped}, Combined: ${counters.combined}`,
@@ -557,6 +573,7 @@ resetBtn.addEventListener("click", () => {
     fileNameLabel.textContent = "";
     logEl.textContent = "";
     setProgress(0, "");
+    ambientGameController.stop();
     [settingsSection, progressSection, resultSection].forEach((s) => s.classList.add("hidden"));
     window.scrollTo({ top: 0, behavior: "smooth" });
 });

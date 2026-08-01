@@ -5,9 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BeReal GDPR Photo Toolkit &mdash; Web</title>
     <meta name="description" content="Process your BeReal GDPR export ZIP entirely in your browser: convert WebP to JPEG, inject EXIF/IPTC metadata, add video metadata, and create combined images. Nothing is uploaded." />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+    <div id="ambient-game" class="ambient-game hidden" aria-label="Background bubble mini-game"></div>
     <header class="site-header">
         <h1>BeReal GDPR Photo Toolkit</h1>
         <p class="tagline">Process your BeReal export ZIP directly in your browser. Your files never leave your device.</p>
@@ -74,6 +76,7 @@
             <h2>3. Processing</h2>
             <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
             <p id="progress-status" class="progress-status">Starting&hellip;</p>
+            <p id="ambient-status" class="ambient-status hidden">While you wait, pop the drifting bubbles in the background. Time <strong id="ambient-timer">0:00</strong> · Score <strong id="ambient-score">0</strong></p>
             <pre id="log" class="log" aria-live="polite"></pre>
         </section>
 
